@@ -13,3 +13,10 @@ venv/
 build/
 dist/
 *.egg-info/
+
+# Environment variables
+.env
+
+# env files (can opt-in for committing if needed)
+.env*
+!.env.example
