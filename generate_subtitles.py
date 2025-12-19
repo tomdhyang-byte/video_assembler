@@ -15,9 +15,10 @@ import sys
 import json
 import re
 import difflib
+import subprocess
 from pathlib import Path
 from dotenv import load_dotenv
-from faster_whisper import WhisperModel
+# from faster_whisper import WhisperModel # 已移除
 from openai import OpenAI
 from opencc import OpenCC
 
@@ -28,10 +29,11 @@ load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL = "gpt-4o-mini"
 OPENAI_TEMPERATURE = 0.3
-WHISPER_MODEL_SIZE = "small"  # 可選 tiny, base, small, medium, large-v3
+# WHISPER_MODEL_SIZE = "medium"  # 已棄用，API 固定使用 whisper-1
 
 # 檔案命名約定
-AUDIO_FILENAME = "full_audio.mp3"
+AVATAR_FILENAME = "avatar_full.mp4"
+EXTRACTED_AUDIO_FILENAME = "_extracted_audio.mp3"  # 從 avatar 提取的音軌
 SCRIPT_FILENAME = "full_script.txt"
 SUBTITLE_FILENAME = "full_subtitle.srt"
 
@@ -127,7 +129,7 @@ def save_srt(subtitles: list, output_path: Path):
     print(f"   共 {len(subtitles)} 行字幕")
 
 def load_script(script_path: Path) -> str:
-    """讀取並標準化逐字稿"""
+    """讀取並標準化逐字稿（假設已是繁體中文，不做轉換）"""
     if not script_path.exists():
         print(f"❌ 錯誤：找不到逐字稿 {script_path}")
         sys.exit(1)
@@ -135,39 +137,74 @@ def load_script(script_path: Path) -> str:
     with open(script_path, "r", encoding="utf-8") as f:
         content = f.read()
     
-    # 統一換行符並轉繁體
+    # 統一換行符（不做簡繁轉換，保留原始用字）
     content = content.replace("\r\n", "\n").replace("\r", "\n")
-    return cc.convert(content)
+    return content
+
+
+def extract_audio_from_video(video_path: Path, output_path: Path) -> Path:
+    """
+    從 Avatar 影片提取音軌供 Whisper 使用
+    確保字幕時間戳與 Avatar 對嘴完全一致（Single Source of Truth）
+    """
+    print("\n🔊 從 Avatar 影片提取音軌...")
+    
+    result = subprocess.run([
+        'ffmpeg', '-y',
+        '-i', str(video_path),
+        '-vn',  # 不要影像
+        '-acodec', 'libmp3lame',
+        '-q:a', '2',  # 高品質
+        str(output_path)
+    ], capture_output=True, text=True)
+    
+    if result.returncode != 0:
+        print(f"⚠️  FFmpeg 警告：{result.stderr[-500:] if result.stderr else 'unknown'}")
+    
+    print(f"   ✅ 音軌提取完成：{output_path}")
+    return output_path
 
 # ============================================================
 # 核心步驟
 # ============================================================
 
 def step1_transcribe_whisper(audio_path: Path) -> list:
-    """Step 1: 使用 faster-whisper 進行語音辨識（獲取字級時間戳）"""
-    print("🚀 開始 Step 1: Whisper 語音辨識...")
-    print(f"   載入模型: {WHISPER_MODEL_SIZE} ...")
+    """Step 1: 使用 OpenAI Whisper API 進行語音辨識（獲取字級時間戳）"""
+    print("🚀 開始 Step 1: Whisper API 語音辨識...")
+    print("   正在上傳音訊至 OpenAI...")
     
     try:
-        model = WhisperModel(WHISPER_MODEL_SIZE, device="cpu", compute_type="int8")
-        segments, info = model.transcribe(str(audio_path), word_timestamps=True, language="zh")
+        with open(audio_path, "rb") as audio_file:
+            response = client.audio.transcriptions.create(
+                model="whisper-1",
+                file=audio_file,
+                language="zh",
+                response_format="verbose_json",
+                timestamp_granularities=["word"]
+            )
         
-        print(f"   偵測到語言：{info.language} (機率 {info.language_probability:.2%})")
+        # API 回傳的是物件，需要轉為我們需要的格式
+        # response.words 是一個 list of objects (word, start, end)
+        
+        print(f"   API 回傳成功 (Duration: {response.duration:.2f}s)")
         
         word_timestamps = []
-        for segment in segments:
-            for word in segment.words:
+        if hasattr(response, 'words'):
+            for word_obj in response.words:
                 word_timestamps.append({
-                    "word": cc.convert(word.word.strip()),
-                    "start": word.start,
-                    "end": word.end
+                    "word": cc.convert(word_obj.word.strip()),
+                    "start": word_obj.start,
+                    "end": word_obj.end
                 })
+        else:
+            # Fallback (雖不太可能，若沒 words 只有 text)
+            print("   ⚠️  警告：API 未回傳詳細字級時間戳")
         
         print(f"   ✅ 取得 {len(word_timestamps)} 個字級時間戳")
         return word_timestamps
         
     except Exception as e:
-        print(f"❌ Whisper 辨識失敗：{e}")
+        print(f"❌ Whisper API 辨識失敗：{e}")
         sys.exit(1)
 
 def step2_force_alignment(whisper_timestamps: list, full_script: str) -> list:
@@ -298,12 +335,26 @@ def step3_segment_text(transcript: str, client: OpenAI) -> list:
         sys.exit(1)
 
 def step4_align_timestamps(subtitle_lines: list, aligned_chars: list) -> list:
-    """Step 4: 將切分好的字幕行與時間戳對齊"""
+    """Step 4: 將切分好的字幕行與時間戳對齊
+    
+    改進版：
+    1. 找不到精確匹配時，使用「當前時間」繼續推進（不會漏字幕）
+    2. 完成後檢查覆蓋率，低於 80% 時警告
+    """
     print("⏱️  Step 4: Python 字幕對齊...")
     
     final_subtitles = []
     char_idx = 0
     total_chars = len(aligned_chars)
+    
+    # 統計用
+    matched_count = 0
+    fallback_count = 0
+    total_script_chars = sum(len(line.replace("\n", "").replace("\r", "")) for line in subtitle_lines)
+    
+    # 取得基準時間（用於 fallback）
+    current_time = aligned_chars[0]["start"] if aligned_chars else 0.0
+    last_end_time = aligned_chars[-1]["end"] if aligned_chars else 0.0
     
     for line in subtitle_lines:
         line_clean = line.replace("\n", "").replace("\r", "")
@@ -317,7 +368,7 @@ def step4_align_timestamps(subtitle_lines: list, aligned_chars: list) -> list:
         for char in line_clean:
             # 貪婪匹配：在 aligned_chars 中尋找下一個匹配的字元
             found = False
-            search_window = 100 # 不要無限往後找
+            search_window = 100  # 不要無限往後找
             
             for k in range(min(search_window, total_chars - char_idx)):
                 if aligned_chars[char_idx + k]["char"] == char:
@@ -329,23 +380,59 @@ def step4_align_timestamps(subtitle_lines: list, aligned_chars: list) -> list:
                     
                     # 持續更新 end_time 直到整句結束
                     end_time = item["end"]
+                    current_time = item["end"]
                     
                     # 更新全域指針
                     char_idx = found_idx + 1
                     found = True
+                    matched_count += 1
                     break
             
             if not found:
-                # 找不到字(可能被 GPT 吃掉或改了標點)，就跳過該字
-                pass
+                # 【修復延遲】找不到精確匹配時：
+                # 1. 使用當前位置的時間（而非陳舊的 current_time）
+                # 2. 推進 char_idx 避免卡住
+                fallback_count += 1
+                
+                if char_idx < total_chars:
+                    # 使用當前位置的時間
+                    item = aligned_chars[char_idx]
+                    if start_time is None:
+                        start_time = item["start"]
+                    end_time = item["end"]
+                    current_time = item["end"]
+                    # 【關鍵修復】推進指針，避免延遲累積
+                    char_idx += 1
+                else:
+                    # 已經到達末尾，使用最後的時間
+                    if start_time is None:
+                        start_time = current_time
+                    end_time = current_time
         
-        if start_time is not None and end_time is not None:
-             final_subtitles.append({
+        # 【改進】即使只有 fallback 時間，也要產生字幕（不會漏）
+        if start_time is not None:
+            # 確保 end_time 至少比 start_time 大一點點
+            if end_time <= start_time:
+                end_time = start_time + 0.5
+            
+            final_subtitles.append({
                 "start": start_time,
                 "end": end_time,
                 "text": line
             })
-            
+    
+    # 【改進】覆蓋率檢查
+    if total_script_chars > 0:
+        coverage = matched_count / total_script_chars
+        print(f"   📊 對齊覆蓋率：{coverage:.1%} ({matched_count}/{total_script_chars} 字元)")
+        
+        if coverage < 0.8:
+            print(f"   ⚠️  警告：覆蓋率低於 80%，字幕時間可能不夠精確！")
+            print(f"   ⚠️  建議檢查逐字稿與音訊是否匹配。")
+        
+        if fallback_count > 0:
+            print(f"   ℹ️  使用 fallback 時間的字元數：{fallback_count}")
+    
     print("   ✅ 對齊完成")
     return final_subtitles
 
@@ -354,13 +441,13 @@ def step4_align_timestamps(subtitle_lines: list, aligned_chars: list) -> list:
 # ============================================================
 def main():
     print("============================================================")
-    print("🎙️  AI 自動字幕生成器 V7 (Force Alignment 版)")
-    print("   Whisper -> Force Align -> GPT Segment -> Python Align")
+    print("🎙️  AI 自動字幕生成器 V9 (Avatar Audio 版)")
+    print("   Avatar 音軌提取 -> Whisper -> Force Align -> GPT -> SRT")
     print("============================================================")
     
     # 預設路徑 (方便測試)
     default_path = "/Users/a01-0218-0512/Downloads/nvdia_jay"
-    user_input = input(f"📂 請輸入包含 'full_audio.mp3' 的資料夾路徑 (預設: {default_path})：").strip()
+    user_input = input(f"📂 請輸入素材資料夾路徑 (預設: {default_path})：").strip()
     
     if not user_input:
         folder_path = default_path
@@ -374,26 +461,44 @@ def main():
 
     print(f"📁 工作目錄：{work_dir}")
     
-    audio_path = work_dir / AUDIO_FILENAME
+    avatar_path = work_dir / AVATAR_FILENAME
     script_path = work_dir / SCRIPT_FILENAME
     output_path = work_dir / SUBTITLE_FILENAME
+    extracted_audio_path = work_dir / EXTRACTED_AUDIO_FILENAME
     
-    if not audio_path.exists():
-        print(f"❌ 找不到音訊檔案：{audio_path}")
+    # 檢查必要檔案
+    if not avatar_path.exists():
+        print(f"❌ 找不到 Avatar 影片：{avatar_path}")
         return
     if not script_path.exists():
         print(f"❌ 找不到逐字稿：{script_path}")
         return
 
+    # 從 Avatar 影片提取音軌（Single Source of Truth）
+    extract_audio_from_video(avatar_path, extracted_audio_path)
+
     # Loading Script
     full_script = load_script(script_path)
     print(f"📝 逐字稿長度：{len(full_script)} 字")
 
-    # Step 1: Whisper
-    whisper_timestamps = step1_transcribe_whisper(audio_path)
+    # Step 1: Whisper（使用從 Avatar 提取的音軌）
+    whisper_timestamps = step1_transcribe_whisper(extracted_audio_path)
+    
+    # 【偵錯】儲存 Step 1 結果
+    step1_output_path = work_dir / "_debug_step1_whisper.json"
+    with open(step1_output_path, "w", encoding="utf-8") as f:
+        json.dump(whisper_timestamps, f, ensure_ascii=False, indent=2)
+    print(f"   💾 Step 1 結果已儲存：{step1_output_path}")
+
     
     # Step 2: Force Alignment
     aligned_chars = step2_force_alignment(whisper_timestamps, full_script)
+    
+    # 【偵錯】儲存 Step 2 結果
+    step2_output_path = work_dir / "_debug_step2_alignment.json"
+    with open(step2_output_path, "w", encoding="utf-8") as f:
+        json.dump(aligned_chars, f, ensure_ascii=False, indent=2)
+    print(f"   💾 Step 2 結果已儲存：{step2_output_path}")
     
     # Step 3: Segmentation
     subtitle_lines = step3_segment_text(full_script, client)
@@ -403,6 +508,12 @@ def main():
     
     # Save
     save_srt(final_subtitles, output_path)
+    
+    # 清理暫存的提取音檔
+    if extracted_audio_path.exists():
+        extracted_audio_path.unlink()
+        print("   🗑️  已清理暫存音檔")
+    
     print("============================================================")
 
 if __name__ == "__main__":

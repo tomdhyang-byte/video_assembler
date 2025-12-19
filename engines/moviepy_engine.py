@@ -73,7 +73,14 @@ def find_matching_pairs(folder: Path) -> list:
         return []
     
     pairs = []
-    for key in sorted(common_keys):
+    # 數字排序：1, 2, 3, ..., 9, 10, 11 而非字母排序 1, 10, 11, 2, 3
+    def numeric_sort_key(x):
+        try:
+            return (0, int(x))  # 純數字排在前面
+        except ValueError:
+            return (1, x)  # 非數字按字母排序
+    
+    for key in sorted(common_keys, key=numeric_sort_key):
         pairs.append((key, image_files[key], mp3_files[key]))
     
     unmatched_images = set(image_files.keys()) - common_keys

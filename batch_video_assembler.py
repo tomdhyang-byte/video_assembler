@@ -11,6 +11,7 @@
 """
 
 import sys
+import argparse
 from pathlib import Path
 
 from config import OutputConfig
@@ -52,16 +53,27 @@ def select_engine():
 def main():
     print_header()
     
-    # 選擇引擎
-    engine_name = select_engine()
+    # 設定參數解析
+    parser = argparse.ArgumentParser(description="自動化簡報影片合成工具")
+    parser.add_argument("folder_path", nargs="?", help="素材資料夾路徑")
+    parser.add_argument("--engine", choices=["ffmpeg", "moviepy"], default="ffmpeg", help="渲染引擎 (預設: ffmpeg)")
+    args = parser.parse_args()
     
-    # 輸入素材路徑
-    try:
-        input_path = input("\n📂 請輸入素材資料夾路徑：").strip()
-    except (KeyboardInterrupt, EOFError):
-        print("\n\n❌ 操作已取消")
-        sys.exit(0)
-    
+    # 1. 決定渲染引擎
+    if args.folder_path:
+        # 如果有指定路徑，直接使用參數指定的引擎 (預設 ffmpeg)
+        engine_name = args.engine
+        input_path = args.folder_path
+        print(f"🚀 CLI 模式啟動 - 引擎: {engine_name}")
+    else:
+        # 互動模式
+        engine_name = select_engine()
+        try:
+            input_path = input("\n📂 請輸入素材資料夾路徑：").strip()
+        except (KeyboardInterrupt, EOFError):
+            print("\n\n❌ 操作已取消")
+            sys.exit(0)
+
     if not input_path:
         print("❌ 錯誤：請提供資料夾路徑")
         sys.exit(1)

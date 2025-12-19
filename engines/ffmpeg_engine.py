@@ -8,11 +8,17 @@ import os
 import subprocess
 import tempfile
 import re
+import concurrent.futures
+import threading
+import time
 from pathlib import Path
-from typing import List, Tuple
+import wave  # 標準庫，用於讀取 WAV
+import numpy as np
+from typing import List, Tuple, Dict  # 更新 Type Hints
 
 from config import (
     VideoConfig,
+    ProcessingConfig,
     SubtitleConfig,
     AvatarConfig,
     FileNames,
@@ -46,7 +52,14 @@ def find_matching_pairs(folder: Path) -> List[Tuple[str, Path, Path]]:
         return []
     
     pairs = []
-    for key in sorted(common_keys):
+    # 數字排序：1, 2, 3, ..., 9, 10, 11 而非字母排序 1, 10, 11, 2, 3
+    def numeric_sort_key(x):
+        try:
+            return (0, int(x))  # 純數字排在前面
+        except ValueError:
+            return (1, x)  # 非數字按字母排序
+    
+    for key in sorted(common_keys, key=numeric_sort_key):
         pairs.append((key, image_files[key], mp3_files[key]))
     
     unmatched_images = set(image_files.keys()) - common_keys
@@ -80,6 +93,88 @@ def get_video_duration(video_path: Path) -> float:
         str(video_path)
     ], capture_output=True, text=True)
     return float(result.stdout.strip())
+
+
+def read_audio_data(audio_path: Path, target_sr: int = 8000) -> np.ndarray:
+    """
+    使用 ffmpeg 將音訊轉換為 raw wav 數據並讀取為 numpy array
+    使用較低的採樣率 (8000Hz) 以加快計算速度，對於對齊來說已經足夠精確
+    """
+    # 使用 temp file 儲存轉換後的 wav
+    with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tf:
+        temp_wav = str(tf.name)
+    
+    try:
+        # 轉換為單聲道、16bit PCM、指定採樣率
+        cmd = [
+            'ffmpeg', '-y', '-v', 'error',
+            '-i', str(audio_path),
+            '-ac', '1',  # 單聲道
+            '-ar', str(target_sr),  # 採樣率
+            '-c:a', 'pcm_s16le',  # 16-bit PCM
+            temp_wav
+        ]
+        subprocess.run(cmd, check=True)
+        
+        # 讀取 wav
+        with wave.open(temp_wav, 'rb') as wf:
+            n_frames = wf.getnframes()
+            frames = wf.readframes(n_frames)
+            # 轉換為 numpy array (int16)
+            audio_data = np.frombuffer(frames, dtype=np.int16)
+            # 正規化到 -1.0 ~ 1.0 (float32) 以便進行 FFT
+            return audio_data.astype(np.float32) / 32768.0
+            
+    finally:
+        if os.path.exists(temp_wav):
+            os.unlink(temp_wav)
+
+
+def find_audio_offset(main_audio: np.ndarray, segment_audio: np.ndarray, sr: int = 8000, start_hint: float = 0.0) -> float:
+    """
+    使用 FFT Cross-Correlation 找出 segment 在 main 中的開始時間
+    """
+    if len(segment_audio) > len(main_audio):
+        return 0.0
+        
+    # 優化：只在 hint 附近搜尋？
+    # 為了簡化，我們先對全域搜尋，但為了避免計算量過大或誤判，
+    # 如果 main audio 真的很長 (例如 > 10分鐘)，可以考慮切片。
+    # 目前 10 分鐘 8000Hz = 4.8M 點，FFT 應該還在幾秒內可完成。
+    
+    n = len(main_audio)
+    
+    # 填充 segment 到相同長度
+    segment_padded = np.zeros(n, dtype=np.float32)
+    segment_padded[:len(segment_audio)] = segment_audio
+    
+    # 使用 FFT 計算 Cross Correlation
+    # Correlation = IFFT( FFT(Main) * Conj(FFT(Segment)) )
+    # 注意：這計算的是 Circular Correlation
+    
+    f_main = np.fft.rfft(main_audio)
+    f_seg = np.fft.rfft(segment_padded)
+    
+    # 計算 correlation (注意 conjugat)
+    # 我們希望找到 segment 在 main 中的位置，這相當於滑動 segment
+    # 實際上，標準的 correlation 是 sum(f * g)，這裡用頻域乘法
+    corr = np.fft.irfft(f_main * np.conj(f_seg))
+    
+    # 找出最大值位置
+    # 為了避免誤判，我們可以限制搜尋範圍在 hint 附近 (例如 +/- 10秒)
+    hint_idx = int(start_hint * sr)
+    window = int(10.0 * sr)  # +/- 10秒
+    
+    search_start = max(0, hint_idx - window // 2)
+    search_end = min(n, hint_idx + window * 2) # 向後多找一點
+    
+    # 只在視窗內找最大值
+    if search_start < search_end:
+        peak_idx = search_start + np.argmax(corr[search_start:search_end])
+    else:
+        peak_idx = np.argmax(corr)
+        
+    return peak_idx / sr
 
 
 # ============================================================
@@ -172,19 +267,33 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 # ============================================================
 # FFmpeg 影片處理
 # ============================================================
-def create_segment_videos(pairs: list, temp_dir: Path) -> List[Path]:
+def create_segment_videos(pairs: list, temp_dir: Path, durations: Dict[str, float]) -> List[Path]:
     """
     為每個圖片+音訊配對創建影片片段
+    [平行處理版] 使用 ThreadPoolExecutor 平行生成，大幅加速
     """
-    segments = []
+    segments = [None] * len(pairs)
+    total_segments = len(pairs)
+    completed_count = 0
+    print_lock = threading.Lock()
     
-    for idx, (seq, image_path, mp3_path) in enumerate(pairs, 1):
-        print(f"   📄 處理中 [{idx}/{len(pairs)}]: {seq}{image_path.suffix} + {seq}.mp3")
+    start_time_all = time.time()
+    
+    def process_single_segment(item):
+        nonlocal completed_count
+        idx, (seq, image_path, mp3_path) = item
         
-        duration = get_audio_duration(mp3_path)
+        target_duration = durations.get(seq, 0.0)
+        
+        # 安全檢查
+        original_duration = get_audio_duration(mp3_path)
+        if target_duration < original_duration:
+            with print_lock:
+                 print(f"      ⚠️  警告：[{seq}] 目標長度 ({target_duration:.2f}s) 小於原始音訊 ({original_duration:.2f}s)，將使用原始長度")
+            target_duration = original_duration
+
         output_segment = temp_dir / f"segment_{seq}.mp4"
         
-        # FFmpeg: 圖片 → 影片（帶音訊）
         cmd = [
             'ffmpeg', '-y',
             '-loop', '1',
@@ -195,17 +304,48 @@ def create_segment_videos(pairs: list, temp_dir: Path) -> List[Path]:
             '-c:a', VideoConfig.AUDIO_CODEC,
             '-b:a', '192k',
             '-vf', f'scale={VideoConfig.WIDTH}:{VideoConfig.HEIGHT}:force_original_aspect_ratio=increase,crop={VideoConfig.WIDTH}:{VideoConfig.HEIGHT}',
+            '-af', 'apad', # 填充靜音，確保音訊長度跟上影片
             '-pix_fmt', 'yuv420p',
-            '-shortest',
-            '-t', str(duration),
+            # '-shortest', # 移除 -shortest，否則會把靜音裁掉導致搶拍
+            '-t', str(target_duration),
+            '-loglevel', 'error', # 減少日誌干擾
             str(output_segment)
         ]
         
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            print(f"⚠️  FFmpeg 警告：{result.stderr[-300:] if result.stderr else 'unknown'}")
+        subprocess.run(cmd, capture_output=True, text=True)
         
-        segments.append(output_segment)
+        with print_lock:
+            completed_count += 1
+            # 簡易進度條
+            percent = (completed_count / total_segments) * 100
+            bar_length = 20
+            filled_length = int(bar_length * completed_count // total_segments)
+            bar = '█' * filled_length + '-' * (bar_length - filled_length)
+            
+            print(f"   ▕{bar}▏ {percent:5.1f}% | 完成片段: {seq} (持續: {target_duration:.2f}s)", end="\r")
+            
+        return idx, output_segment
+
+    # 準備參數
+    work_items = []
+    for idx, (seq, image_path, mp3_path) in enumerate(pairs):
+        work_items.append((idx, (seq, image_path, mp3_path)))
+        
+    # 平行執行 (Max Workers 由 config 決定)
+    max_workers = ProcessingConfig.MAX_WORKERS
+    print(f"   🚀 啟動平行處理 (Workers: {max_workers})...")
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        results = list(executor.map(process_single_segment, work_items))
+        
+    print() # 換行
+    
+    # 按照原始順序重組
+    for idx, path in results:
+        segments[idx] = path
+        
+    elapsed = time.time() - start_time_all
+    print(f"   ✅ 全部片段生成完成，耗時: {elapsed:.2f}s")
     
     return segments
 
@@ -317,11 +457,13 @@ def create_avatar_overlay_video(avatar_path: Path, duration: float, temp_dir: Pa
 def composite_final_video(
     base_video: Path,
     avatar_video: Path,
+    original_avatar_path: Path,  # 新增：原始 Avatar 檔案（音訊來源）
     ass_path: Path,
     output_path: Path
 ):
     """
     最終合成：基礎軌 + Avatar 疊加 + 字幕燒錄
+    音訊來源：使用原始 Avatar 影片的音軌 (Single Source of Truth)
     """
     print(f"\n🎬 開始最終合成...")
     
@@ -335,20 +477,21 @@ def composite_final_video(
         # 注意：ass 路徑需要轉義冒號和反斜線
         ass_escaped = str(ass_path).replace(":", "\\:").replace("\\", "/")
         filter_complex = (
-            f"[0:v][1:v]overlay={pos_x}:{pos_y}:shortest=1[composited];"
+            f"[0:v][1:v]overlay={pos_x}:{pos_y}[composited];"  # 移除 shortest=1，讓長度跟隨最長的流（通常是音訊）
             f"[composited]ass='{ass_escaped}'[out]"
         )
     else:
         # 無字幕：只疊加 Avatar
-        filter_complex = f"[0:v][1:v]overlay={pos_x}:{pos_y}:shortest=1[out]"
+        filter_complex = f"[0:v][1:v]overlay={pos_x}:{pos_y}[out]"
     
     cmd = [
         'ffmpeg', '-y',
-        '-i', str(base_video),
-        '-i', str(avatar_video),
+        '-i', str(base_video),          # Input 0: 基礎視覺軌 (由片段拼接)
+        '-i', str(avatar_video),        # Input 1: 處理後的圓形 Avatar (無聲)
+        '-i', str(original_avatar_path),# Input 2: 原始 Avatar (取其音訊)
         '-filter_complex', filter_complex,
-        '-map', '[out]',
-        '-map', '0:a',
+        '-map', '[out]',                # 影像來自濾鏡輸出
+        '-map', '2:a',                  # 音訊來自原始 Avatar
         '-c:v', VideoConfig.CODEC,
         '-preset', VideoConfig.PRESET,
         '-c:a', VideoConfig.AUDIO_CODEC,
@@ -400,15 +543,86 @@ def run(folder_path: Path, output_path: Path):
     if not pairs:
         raise ValueError("找不到任何圖片/MP3 配對")
     
-    print(f"   ✅ 找到 {len(pairs)} 組配對")
+    # Audio Fingerprinting Sync (音訊指紋對齊)
+    print("\n🎧 正在進行 Audio Fingerprinting 對齊...")
+    print("   載入 Avatar 音軌數據 (8000Hz)...")
+    main_audio = read_audio_data(avatar_path, target_sr=8000)
+    avatar_duration = len(main_audio) / 8000.0
+    print(f"   📊 Avatar 音軌長度: {avatar_duration:.2f}s")
     
-    # 創建暫存目錄
+    exact_durations = {}
+    current_hint = 0.0
+    
+    start_times = {} # 記錄每段的開始時間，用於計算 duration
+    
+    # 1. 找出所有片段的開始時間
+    for idx, (seq, _, mp3_path) in enumerate(pairs):
+        print(f"   🔍 對齊中 [{idx+1}/{len(pairs)}]: {seq}.mp3...", end="\r")
+        seg_audio = read_audio_data(mp3_path, target_sr=8000)
+        
+        # 使用 FFT 找出精確位置
+        start_time = find_audio_offset(main_audio, seg_audio, sr=8000, start_hint=current_hint)
+        start_times[seq] = start_time
+        
+        # 更新 hint (下一段應該在這一段結束後)
+        seg_duration = len(seg_audio) / 8000.0
+        current_hint = start_time + seg_duration
+        
+    print("\n   ✅ 對齊完成，計算每張圖片精確持續時間...")
+    
+    # 2. 計算 duration = Next_Start - Current_Start
+    # 【修正搶拍問題】使用「幀級精確計算 (Frame-Perfect Calculation)」
+    # 避免浮點數秒數在轉為幀數時產生量化誤差累積 (Quantization Drift)
+    
+    sorted_pairs = pairs # pairs 已經按照 seq 排序過
+    fps = VideoConfig.FPS
+    
+    for i in range(len(sorted_pairs)):
+        current_seq = sorted_pairs[i][0]
+        current_start = start_times[current_seq]
+        
+        # 將「秒數」轉換為絕對的「幀數位置」 (四捨五入)
+        # F_start[n] = Round( T_start[n] * FPS )
+        current_frame_start = int(round(current_start * fps))
+        
+        if i < len(sorted_pairs) - 1:
+            next_seq = sorted_pairs[i+1][0]
+            next_start = start_times[next_seq]
+            next_frame_start = int(round(next_start * fps))
+            
+            # Duration_Frames = Next_Frame_Start - Current_Frame_Start
+            # 這保證了所有片段加起來的總幀數，嚴格等於總時間對應的幀數，誤差為 0
+            duration_frames = next_frame_start - current_frame_start
+            
+            # 轉回秒數給 FFmpeg 使用 (FFmpeg 會視為精確的幀數整數倍)
+            duration = duration_frames / fps
+            
+            # 安全檢查
+            if duration <= 0.1:
+                print(f"   ⚠️  警告：片段 {current_seq} 計算出的持續時間異常 ({duration:.2f}s / {duration_frames} frames)，使用預設值")
+                duration = get_audio_duration(sorted_pairs[i][2])
+                
+        else:
+            # 最後一段：持續到 Avatar 結束
+            # 同樣使用幀數計算
+            avatar_frame_len = int(round(avatar_duration * fps))
+            duration_frames = avatar_frame_len - current_frame_start
+            
+            duration = duration_frames / fps
+            
+            if duration <= 0:
+                 duration = get_audio_duration(sorted_pairs[i][2])
+        
+        exact_durations[current_seq] = duration
+        # print(f"      - {current_seq}: {duration:.2f}s (Start: {current_start:.2f}s)")
+
+    # Create temporary directory for processing
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
         
         # Step 1: 創建影片片段
-        print("\n🎞️  建立影片片段...")
-        segments = create_segment_videos(pairs, temp_path)
+        print("\n🎞️  建立影片片段 (使用精確對齊時間)...")
+        segments = create_segment_videos(pairs, temp_path, exact_durations)
         
         # Step 2: 串接片段
         base_video = temp_path / "base_track.mp4"
@@ -427,4 +641,4 @@ def run(folder_path: Path, output_path: Path):
             generate_ass_file(subtitle_path, ass_path)
         
         # Step 5: 最終合成
-        composite_final_video(base_video, avatar_processed, ass_path, output_path)
+        composite_final_video(base_video, avatar_processed, avatar_path, ass_path, output_path)
