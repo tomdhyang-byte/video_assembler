@@ -22,7 +22,7 @@
 | **1. 語音辨識** | 呼叫 **OpenAI Whisper API** (Whisper-v2 large)。設定 `timestamp_granularities=['word']`。 | 取得每一個「字 (Word)」的開始與結束時間 (Start/End Timestamp)。 |
 | **2. 強制對齊 (Force Alignment)** | 使用 **Dynamic Time Warping (DTW)** 演算法，將 Whisper 辨識出的字，與用戶提供的「正確逐字稿」進行比對。 | **修正錯字與時間校正**。Whisper 偶爾會聽錯，但對齊後可以同時擁有「正確文字」與「精確時間」。 |
 | **3. 智慧分段 (GPT-4o-mini)** | 使用 **LLM** 進行語意分析，將長文切分為適合閱讀的短句 (每行限制 18 字)。 | **提升閱讀體驗**。避免字幕在不該斷的地方換行（如：專有名詞被切開）。 |
-| **4. 時間軸合成** | 將 GPT 分好的「句子」與 Step 2 的「字級時間戳」重新映射 (Mapping)。 | 產出最終的 SRT/ASS 字幕檔，時間精確到 0.01 秒。 |
+| **4. 時間軸合成** | 將 GPT 分好的「句子」與 Step 2 的「字級時間戳」重新映射 (Mapping)。寫入 SRT 時自動**移除結尾標點** (逗號、句號等)。 | 產出最終的 SRT/ASS 字幕檔，時間精確到 0.01 秒，視覺乾淨無冗餘標點。 |
 
 ### 🔍 深入解析：Force Alignment 運作邏輯
 

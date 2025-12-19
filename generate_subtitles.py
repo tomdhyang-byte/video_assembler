@@ -123,7 +123,8 @@ def save_srt(subtitles: list, output_path: Path):
         for i, sub in enumerate(subtitles, 1):
             start = format_timestamp(sub["start"])
             end = format_timestamp(sub["end"])
-            text = sub["text"]
+            # 移除結尾標點 (逗號、句號等)，讓字幕視覺更乾淨
+            text = re.sub(r'[，。、；：,\.]+$', '', sub["text"])
             f.write(f"{i}\n{start} --> {end}\n{text}\n\n")
     print(f"✅ 成功！字幕已儲存至：{output_path}")
     print(f"   共 {len(subtitles)} 行字幕")
