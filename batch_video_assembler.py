@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-自動化簡報影片合成工具 (Batch Video Assembler) V3
-雙引擎架構：MoviePy（穩定）/ FFmpeg（高效能）
+自動化簡報影片合成工具 (Batch Video Assembler) V10
+引擎架構：FFmpeg（高效能）
 
 功能：
 - 將切片化的語音與圖片組裝成完整的 16:9 簡報影片
@@ -13,15 +13,15 @@
 import sys
 import argparse
 from pathlib import Path
-
 from config import OutputConfig
+from engines import ffmpeg_engine
 
 
 def print_header():
     """印出歡迎標題"""
     print("\n" + "=" * 60)
-    print("🎬 自動化簡報影片合成工具 V3")
-    print("   雙引擎架構：MoviePy / FFmpeg")
+    print("🎬 自動化簡報影片合成工具 V10")
+    print("   引擎核心：FFmpeg (高效能版)")
     print("=" * 60 + "\n")
 
 
@@ -32,42 +32,20 @@ def normalize_path(input_path: str) -> Path:
     return path
 
 
-def select_engine():
-    """選擇渲染引擎"""
-    print("請選擇渲染引擎：")
-    print("  [1] FFmpeg（推薦，高效能）")
-    print("  [2] MoviePy（穩定，較慢）")
-    print()
-    
-    try:
-        choice = input("請輸入選項 (1/2，預設 1)：").strip()
-    except (KeyboardInterrupt, EOFError):
-        print("\n\n❌ 操作已取消")
-        sys.exit(0)
-    
-    if choice == "2":
-        return "moviepy"
-    return "ffmpeg"  # 預設使用 FFmpeg
-
-
 def main():
     print_header()
     
     # 設定參數解析
     parser = argparse.ArgumentParser(description="自動化簡報影片合成工具")
     parser.add_argument("folder_path", nargs="?", help="素材資料夾路徑")
-    parser.add_argument("--engine", choices=["ffmpeg", "moviepy"], default="ffmpeg", help="渲染引擎 (預設: ffmpeg)")
+    # engine 參數已移除，固定使用 ffmpeg
     args = parser.parse_args()
     
-    # 1. 決定渲染引擎
+    # 輸入素材路徑
     if args.folder_path:
-        # 如果有指定路徑，直接使用參數指定的引擎 (預設 ffmpeg)
-        engine_name = args.engine
         input_path = args.folder_path
-        print(f"🚀 CLI 模式啟動 - 引擎: {engine_name}")
+        print(f"🚀 CLI 模式啟動")
     else:
-        # 互動模式
-        engine_name = select_engine()
         try:
             input_path = input("\n📂 請輸入素材資料夾路徑：").strip()
         except (KeyboardInterrupt, EOFError):
@@ -95,14 +73,9 @@ def main():
     print(f"\n📁 素材資料夾：{folder_path}")
     print(f"📝 輸出路徑：{output_path}")
     
-    # 載入並執行引擎
+    # 執行 FFmpeg 引擎
     try:
-        if engine_name == "ffmpeg":
-            from engines import ffmpeg_engine
-            ffmpeg_engine.run(folder_path, output_path)
-        else:
-            from engines import moviepy_engine
-            moviepy_engine.run(folder_path, output_path)
+        ffmpeg_engine.run(folder_path, output_path)
             
     except FileNotFoundError as e:
         print(f"\n❌ 錯誤：{e}")
@@ -112,8 +85,6 @@ def main():
         sys.exit(1)
     except Exception as e:
         print(f"\n❌ 發生錯誤：{e}")
-        if engine_name == "ffmpeg":
-            print("\n💡 提示：如果 FFmpeg 引擎失敗，可嘗試使用 MoviePy 引擎")
         sys.exit(1)
 
 

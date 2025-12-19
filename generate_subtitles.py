@@ -18,7 +18,7 @@ import difflib
 import subprocess
 from pathlib import Path
 from dotenv import load_dotenv
-# from faster_whisper import WhisperModel # 已移除
+from dotenv import load_dotenv
 from openai import OpenAI
 from opencc import OpenCC
 
@@ -29,7 +29,7 @@ load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL = "gpt-4o-mini"
 OPENAI_TEMPERATURE = 0.3
-# WHISPER_MODEL_SIZE = "medium"  # 已棄用，API 固定使用 whisper-1
+OPENAI_TEMPERATURE = 0.3
 
 # 檔案命名約定
 AVATAR_FILENAME = "avatar_full.mp4"
