@@ -179,7 +179,8 @@ async def process_local_task(
         video_path = processor.process(
             folder, 
             output_path,
-            skip_subtitle=skip_subtitle
+            skip_subtitle=skip_subtitle,
+            debug=True
         )
         
         # 更新任務狀態

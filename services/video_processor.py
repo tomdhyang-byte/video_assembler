@@ -28,7 +28,7 @@ class VideoProcessor:
         folder_path: Path,
         output_path: Path = None,
         skip_subtitle: bool = False,
-        debug: bool = False
+        debug: bool = True
     ) -> Path:
         """
         完整處理流程：字幕生成 + 影片合成
@@ -78,7 +78,7 @@ class VideoProcessor:
     def generate_subtitle_only(
         self,
         folder_path: Path,
-        debug: bool = False
+        debug: bool = True
     ) -> Path:
         """
         僅生成字幕（不合成影片）
