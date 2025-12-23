@@ -1,97 +1,197 @@
-# 自動化簡報影片合成工具 (AutoVideoMaker) V10
+# 自動化簡報影片合成工具 (AutoVideoMaker) V12
 
-這是一個高性能自動化工具，旨在將 **語音檔 (MP3)** 與 **簡報圖片 (JPG/PNG)** 結合成專業 1080p 影片。本版本專注於 **穩定性 (不再搶拍)** 與 **高性能 (轉錄與合成提速 5-10 倍)**。
+這是一個高性能自動化工具，旨在將 **語音檔 (MP3)** 與 **簡報圖片 (JPG/PNG)** 結合成專業 1080p 影片。
 
-## 🚀 重點更新 (V10)
+## 🚀 重點更新 (V12)
 
-1.  **OpenAI Whisper API 集成**：轉錄速度提升至秒級（原本 local 需 30min+）。
-2.  **FFmpeg 平行渲染引擎**：利用多核心 CPU 同時生成簡報片段，合成速度提升 400%。
-3.  **音訊指紋與幀精確對齊 (Frame-Perfect Sync)**：
-    *   使用 FFT Cross-Correlation 技術自動校準 Slide 與總音軌的對位。
-    *   採用「幀級長度計算」徹底消除影音不同步（搶拍）問題。
-4.  **CLI 非交互模式**：支援指令參數，適合自動化流程。
-5.  **ASS 字幕轉錄**：使用 SSA/ASS 格式提供比 SRT 更精確的字幕定位與渲染。
+1. **WebAPI 支援**：新增 FastAPI WebAPI，支援 Make.com 自動化整合
+2. **Google Drive 整合**：直接從 Google Drive 下載素材、上傳成品
+3. **Webhook 回調**：長時間處理完成後自動通知
+4. **模組化服務架構**：API 和 CLI 共用相同的業務邏輯層
+
+## 📁 專案架構
+
+```
+AutoVideoMaker/
+├── api/                       # WebAPI 層
+│   ├── main.py                # FastAPI 入口
+│   ├── routes.py              # API 路由
+│   └── schemas.py             # Pydantic 模型
+├── cli/                       # CLI 入口層
+│   ├── batch_video_assembler.py
+│   └── generate_subtitles.py
+├── services/                  # 業務邏輯層
+│   ├── video_processor.py     # 統一處理入口
+│   ├── subtitle_service.py    # 字幕生成服務
+│   └── assembly_service.py    # 影片合成服務
+├── engines/                   # 底層引擎
+│   └── ffmpeg_engine.py
+├── integrations/              # 外部服務整合
+│   ├── openai_client.py       # OpenAI API
+│   └── google_drive.py        # Google Drive API
+├── config.py                  # 共用設定
+└── service_account.json       # Google 認證金鑰
+```
 
 ## 💎 功能特色
 
-*   **完美拼接**：自動掃描並對齊 MP3 與圖片，保證聲音與畫面轉換點分秒不差。
-*   **圓形 Avatar**：自動裁切 HeyGen 影片人頭並套用圓形遮罩與縮放定位。
-*   **AI 智控字幕**：
-    *   從 Avatar 原始音軌提取聲音（唯一事實來源）。
-    *   GPT 智慧斷句（自動分行，每行 ≤18 字）。
-    *   Force Alignment 技術保證字幕與發音高度重合。
+* **WebAPI + CLI 雙入口**：支援自動化整合與手動操作
+* **Google Drive 整合**：從雲端下載素材，處理後自動上傳
+* **完美拼接**：音訊指紋對齊，保證聲畫同步
+* **AI 智控字幕**：Whisper + GPT 智慧斷句（每行 ≤18 字）
+* **非同步處理**：長時間任務背景執行，完成後 Webhook 通知
 
-## 🛠️ 環境需求
+---
 
-*   Python 3.12
-*   FFmpeg (必備，包含 ffprobe)
-*   OpenAI API Key (需具備存取存取權)
-*   macOS (推薦) 或 Linux
+## 🌐 WebAPI 使用
 
-## 📦 安裝
+### 啟動伺服器
 
 ```bash
-# 建立虛擬環境
+cd /Users/a01-0218-0512/Documents/AutoVideoMaker
+source venv/bin/activate
+uvicorn api.main:app --reload --port 8000
+```
+
+### API 端點
+
+| 端點 | 方法 | 功能 |
+|:---|:---|:---|
+| `/api/health` | GET | 健康檢查 |
+| `/api/process-video` | POST | 處理 Google Drive 素材 |
+| `/api/process-local` | POST | 處理本地素材（測試用） |
+| `/api/jobs/{job_id}` | GET | 查詢任務狀態 |
+
+### Swagger UI
+
+👉 http://localhost:8000/docs
+
+### 範例請求
+
+```bash
+curl -X POST "http://localhost:8000/api/process-video" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "drive_folder_id": "1abc123XYZ",
+    "callback_url": "https://hook.make.com/xxx",
+    "skip_subtitle": false
+  }'
+```
+
+---
+
+## 🖥️ CLI 使用
+
+### 一鍵處理（字幕 + 合成）
+
+```bash
+python -m cli.batch_video_assembler /路徑/到/素材資料夾
+```
+
+### 更多執行模式
+
+```bash
+# 僅生成字幕
+python -m cli.batch_video_assembler /路徑/到/素材 --subtitle-only
+
+# 僅合成影片（字幕已存在）
+python -m cli.batch_video_assembler /路徑/到/素材 --video-only
+
+# 跳過字幕，直接合成
+python -m cli.batch_video_assembler /路徑/到/素材 --skip-subtitle
+
+# 指定輸出路徑
+python -m cli.batch_video_assembler /路徑/到/素材 -o /輸出/位置/video.mp4
+
+# 關閉除錯模式
+python -m cli.batch_video_assembler /路徑/到/素材 --no-debug
+```
+
+---
+
+## 📦 環境設定
+
+### 安裝依賴
+
+```bash
 python3 -m venv venv
 source venv/bin/activate
-
-# 安裝依賴 (已精簡，移除本地模型依賴)
-pip install numpy opencc-python-reimplemented openai python-dotenv
+pip install numpy opencc-python-reimplemented openai python-dotenv \
+            fastapi uvicorn httpx pydantic \
+            google-auth google-auth-oauthlib google-api-python-client
 ```
 
-## 📖 使用流程
+### 環境變數
 
-### Step 1：準備素材
+建立 `.env` 檔案：
+```
+OPENAI_API_KEY=sk-your-api-key
+```
 
-將素材放入資料夾，格式如下：
+### Google Drive 設定
+
+1. 建立 Google Cloud 專案
+2. 啟用 Google Drive API
+3. 建立 Service Account 並下載 JSON 金鑰
+4. 將金鑰檔案放到專案目錄，命名為 `service_account.json`
+5. 將 Service Account Email 加入共用雲端硬碟
+
+---
+
+## 📁 素材資料夾結構
+
 ```
 素材資料夾/
-├── 1.jpg               # 簡報圖片 (1-N)
-├── 1.mp3               # 片段語音 (1-N)
-├── avatar_full.mp4     # HeyGen 產出的解說影片
-└── full_script.txt     # 正確的逐字稿
+├── 1.jpg, 2.jpg...        # 簡報圖片
+├── 1.mp3, 2.mp3...        # 片段語音
+├── avatar_full.mp4        # HeyGen 產出的解說影片
+└── full_script.txt        # 正確的逐字稿
 ```
 
-### Step 2：極速生成字幕 (OpenAI API)
+### 輸出檔案
 
-```bash
-python generate_subtitles.py
-# 或在提示時輸入路徑
-```
+- `output.mp4` - 合成後的影片
+- `full_subtitle.srt` - 生成的字幕檔
+- `_debug_step1_whisper.json` - Whisper 辨識結果
+- `_debug_step2_alignment.json` - Force Alignment 結果
 
-### Step 3：高性能影片合成
-
-```bash
-# 模式 A：互動模式
-python batch_video_assembler.py
-
-# 模式 B：指令模式 (CLI Mode) - 推薦
-python batch_video_assembler.py /路徑/到/素材 --engine ffmpeg
-```
-
-輸出：`~/Desktop/{資料夾名稱}.mp4`
-
-## ⚙️ 核心配置 (`config.py`)
-
-您可以在 `config.py` 中調整所有參數，無需修改主程式：
-
--   **影像屬性**: 解析度 (1080p), FPS (24), 編碼器 (libx264)
--   **字幕樣式**: 字體、顏色 (Yellow), Y 軸中心點 (1000)
--   **Avatar 定位**: 裁切座標、圓形縮放比例
--   **性能設定**: `MAX_WORKERS` 平行線程數 (預設 8)
+---
 
 ## 🏗️ 技術架構
 
 ```mermaid
 graph TD
-    A[Avatar影片] -->|提取音軌| B(OpenAI Whisper API)
-    B -->|字級時間戳| C[Force Alignment]
-    D[原始草稿] --> C
-    C -->|時間軸校正| E[GPT 智慧斷句]
-    E -->|生成| F[SRT/ASS 字幕]
-    G[切片MP3 + 圖片] -->|Audio Fingerprinting| H[精確幀對齊]
-    H -->|平行FFmpeg| I[視覺基礎軌]
-    I -->|疊加| J[Avatar 處理]
-    J -->|燒錄| F
-    F -->|產出| K((最終影片))
+    subgraph "入口層"
+        API[WebAPI]
+        CLI[CLI]
+    end
+    
+    subgraph "服務層"
+        VP[VideoProcessor]
+        SS[SubtitleService]
+        AS[AssemblyService]
+    end
+    
+    subgraph "引擎層"
+        ENG[FFmpeg Engine]
+    end
+    
+    subgraph "整合層"
+        OAI[OpenAI Client]
+        GD[Google Drive Client]
+    end
+    
+    API --> VP
+    CLI --> VP
+    VP --> SS
+    VP --> AS
+    SS --> OAI
+    AS --> ENG
+    API --> GD
 ```
+
+---
+
+## 📚 更多文件
+
+詳細的程式碼架構與模組說明，請參考 [CODE_ARCHITECTURE.md](./CODE_ARCHITECTURE.md)。

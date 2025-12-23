@@ -20,3 +20,6 @@ dist/
 # env files (can opt-in for committing if needed)
 .env*
 !.env.example
+
+# Service Account Key
+service_account.json

@@ -6,24 +6,171 @@
 
 ```
 AutoVideoMaker/
-├── batch_video_assembler.py   # 🎬 影片合成入口 (CLI)
-├── generate_subtitles.py      # 🎙️ 字幕生成主程式
-├── config.py                  # ⚙️ 共用設定參數
-└── engines/
-    ├── __init__.py
-    └── ffmpeg_engine.py       # 🔧 FFmpeg 核心引擎
+├── api/                       # 🌐 WebAPI 層
+│   ├── main.py                    # FastAPI 入口
+│   ├── routes.py                  # API 路由與背景任務
+│   └── schemas.py                 # Pydantic 請求/回應模型
+│
+├── cli/                       # 🖥️ CLI 入口層
+│   ├── batch_video_assembler.py   # 影片合成 CLI
+│   └── generate_subtitles.py      # 字幕生成 CLI
+│
+├── services/                  # ⚙️ 業務邏輯層
+│   ├── video_processor.py         # 統一處理入口（API/CLI 共用）
+│   ├── subtitle_service.py        # 字幕生成服務
+│   └── assembly_service.py        # 影片合成服務
+│
+├── engines/                   # 🔧 底層引擎
+│   └── ffmpeg_engine.py           # FFmpeg 核心渲染引擎
+│
+├── integrations/              # 🔌 外部服務整合
+│   ├── openai_client.py           # OpenAI API（Whisper/GPT）
+│   └── google_drive.py            # Google Drive API
+│
+├── config.py                  # 📋 共用設定參數
+└── service_account.json       # 🔑 Google 認證金鑰
+```
+
+---
+
+## 架構設計理念
+
+```mermaid
+graph TB
+    subgraph "入口層 (API / CLI)"
+        API[api/main.py]
+        CLI_A[cli/batch_video_assembler.py]
+        CLI_B[cli/generate_subtitles.py]
+    end
+    
+    subgraph "服務層 (Business Logic)"
+        VP[VideoProcessor]
+        SS[SubtitleService]
+        AS[AssemblyService]
+    end
+    
+    subgraph "引擎層 (Core Engine)"
+        ENG[ffmpeg_engine.py]
+    end
+    
+    subgraph "整合層 (Integrations)"
+        OPENAI[OpenAIClient]
+        GDRIVE[GoogleDriveClient]
+    end
+    
+    API --> VP
+    API --> GDRIVE
+    CLI_A --> VP
+    CLI_B --> SS
+    VP --> SS
+    VP --> AS
+    AS --> ENG
+    SS --> OPENAI
 ```
 
 ---
 
 ## 模組職責
 
-| 檔案 | 職責 | 關鍵依賴 |
+| 層級 | 模組 | 職責 |
 |:---|:---|:---|
-| `generate_subtitles.py` | Whisper 語音辨識 → DTW 對齊 → GPT 斷句 → SRT 輸出 | OpenAI API, OpenCC |
-| `batch_video_assembler.py` | CLI 入口，路徑驗證，呼叫 ffmpeg_engine | config, engines |
-| `config.py` | 影片規格、字幕樣式、Avatar 位置等共用常數 | - |
-| `engines/ffmpeg_engine.py` | 音訊對齊、平行渲染、最終合成 | numpy, scipy, FFmpeg |
+| **API** | `api/main.py` | FastAPI 入口，CORS 設定 |
+| **API** | `api/routes.py` | 路由定義，背景任務，Webhook |
+| **API** | `api/schemas.py` | Pydantic 模型（VideoRequest, VideoResponse） |
+| **CLI** | `cli/batch_video_assembler.py` | 影片合成 CLI 入口 |
+| **CLI** | `cli/generate_subtitles.py` | 字幕生成 CLI 入口 |
+| **服務** | `services/video_processor.py` | 統一入口：串接字幕生成 + 影片合成 |
+| **服務** | `services/subtitle_service.py` | Whisper → DTW 對齊 → GPT 斷句 → SRT |
+| **服務** | `services/assembly_service.py` | 素材驗證，呼叫 ffmpeg_engine 合成 |
+| **引擎** | `engines/ffmpeg_engine.py` | 音訊對齊、平行渲染、Avatar 遮罩 |
+| **整合** | `integrations/openai_client.py` | OpenAI API（Whisper/GPT）封裝 |
+| **整合** | `integrations/google_drive.py` | Google Drive 下載/上傳功能 |
+| **設定** | `config.py` | 影片規格、字幕樣式、Avatar 位置 |
+
+---
+
+## 核心類別速查
+
+### `api/routes.py`
+
+```python
+# API 端點
+@router.get("/health")              # 健康檢查
+@router.post("/process-video")      # Google Drive 處理
+@router.post("/process-local")      # 本地處理（測試用）
+@router.get("/jobs/{job_id}")       # 任務狀態查詢
+
+# 背景任務
+async def process_video_task(...)   # Drive 處理流程
+async def process_local_task(...)   # 本地處理流程
+async def send_webhook(...)         # Webhook 通知
+```
+
+### `services/video_processor.py`
+
+```python
+class VideoProcessor:
+    def process(folder_path, output_path, skip_subtitle, debug)
+    def generate_subtitle_only(folder_path, debug)
+    def assemble_video_only(folder_path, output_path)
+    def validate(folder_path)
+```
+
+### `services/subtitle_service.py`
+
+```python
+class SubtitleService:
+    def generate(folder_path, debug)           # 主入口
+    def _step1_transcribe_whisper(audio_path)  # Whisper API
+    def _step2_force_alignment(whisper_ts, script)
+    def _step3_segment_text(transcript)        # GPT 斷句
+    def _step4_align_timestamps(lines, chars)
+```
+
+### `integrations/google_drive.py`
+
+```python
+class GoogleDriveClient:
+    def list_files(folder_id)                  # 列出檔案
+    def download_folder(folder_id, local_path) # 下載資料夾
+    def upload_file(file_path, parent_id)      # 上傳檔案
+    def get_file_link(file_id)                 # 取得連結
+
+def get_drive_client() -> GoogleDriveClient
+```
+
+### `integrations/openai_client.py`
+
+```python
+class OpenAIClient:
+    def transcribe_audio(audio_path, language)
+    def chat_completion(system_prompt, user_prompt)
+
+def get_openai_client() -> OpenAIClient
+```
+
+---
+
+## API 處理流程
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+    participant Drive
+    participant VideoProcessor
+    participant Webhook
+
+    Client->>API: POST /api/process-video
+    API-->>Client: {job_id, status: processing}
+    
+    Note over API: 背景任務開始
+    API->>Drive: 下載素材資料夾
+    API->>VideoProcessor: 處理影片
+    API->>Drive: 上傳 output.mp4
+    API->>Drive: 上傳 debug 檔案
+    API->>Webhook: 發送完成通知
+```
 
 ---
 
@@ -33,111 +180,90 @@ AutoVideoMaker/
 flowchart LR
     subgraph 輸入
         A[avatar_full.mp4]
-        B[script.txt]
+        B[full_script.txt]
         C[*.mp3 切片]
         D[*.png 簡報]
     end
 
-    subgraph 字幕生成
-        GS[generate_subtitles.py]
-        A --> GS
-        B --> GS
-        GS --> SRT[full_subtitle.srt]
+    subgraph "入口層"
+        API[WebAPI]
+        CLI[CLI]
     end
 
-    subgraph 影片合成
-        BVA[batch_video_assembler.py]
+    subgraph "服務層"
+        VP[VideoProcessor]
+        SS[SubtitleService]
+        AS[AssemblyService]
+    end
+
+    subgraph "整合層"
+        OAI[OpenAIClient]
+        GD[GoogleDriveClient]
+    end
+
+    subgraph "引擎層"
         ENG[ffmpeg_engine.py]
-        A --> BVA
-        C --> BVA
-        D --> BVA
-        SRT --> BVA
-        BVA --> ENG
     end
 
-    ENG --> OUT[完成影片.mp4]
+    API --> GD
+    API --> VP
+    CLI --> VP
+    VP --> SS
+    VP --> AS
+    
+    A --> SS
+    B --> SS
+    SS --> OAI
+    SS --> SRT[full_subtitle.srt]
+    
+    A --> AS
+    C --> AS
+    D --> AS
+    SRT --> AS
+    AS --> ENG
+    
+    ENG --> OUT[output.mp4]
+    OUT --> GD
 ```
-
----
-
-## 核心函數速查
-
-### `generate_subtitles.py`
-
-```python
-step1_transcribe_whisper(audio_path)     # Whisper API 取得字級時間戳
-step2_force_alignment(whisper_ts, script) # DTW 對齊修正錯字
-step3_segment_text(transcript, client)    # GPT-4o-mini 智慧斷句
-step4_align_timestamps(lines, chars)      # 組合時間軸 → SRT
-```
-
-### `engines/ffmpeg_engine.py`
-
-```python
-find_audio_offset(main, segment, sr)      # FFT 音訊指紋定位
-create_segment_videos(pairs, temp, dur)   # 平行渲染片段 (8 threads)
-concat_segments(segments, output)         # 串接片段
-create_avatar_overlay_video(avatar, dur)  # 圓形遮罩 Avatar
-composite_final_video(base, avatar, ...)  # 最終合成
-run(folder_path, output_path)             # 引擎入口
-```
-
-### `config.py` 設定類別
-
-```python
-VideoConfig       # WIDTH=1920, HEIGHT=1080, FPS=24
-SubtitleConfig    # FONT_SIZE=96, COLOR="yellow"
-AvatarConfig      # CROP_X/Y, SCALE_RATIO=0.12
-ProcessingConfig  # MAX_WORKERS=8
-FileNames         # SUBTITLE_FILE, AVATAR_FILE...
-OutputConfig      # OUTPUT_DIR = ~/Desktop
-```
-
----
-
-## 關鍵技術實作
-
-### 1. Force Alignment (DTW)
-**位置**: `generate_subtitles.py` → `step2_force_alignment()`
-
-將 Whisper 辨識結果與正確逐字稿對齊，修正錯字同時保留精確時間戳。
-
-### 2. 音訊指紋對齊 (FFT Cross-Correlation)
-**位置**: `ffmpeg_engine.py` → `find_audio_offset()`
-
-用 FFT 找出每個 MP3 切片在總音軌中的精確位置，避免時間累積誤差。
-
-### 3. 幀級精確計算
-**位置**: `ffmpeg_engine.py` → `create_segment_videos()`
-
-所有時間轉換為幀數計算，確保 `Σ(片段幀數) == 總影片幀數`。
-
-### 4. 平行渲染
-**位置**: `ffmpeg_engine.py` → `create_segment_videos()`
-
-使用 `ThreadPoolExecutor(max_workers=8)` 同時渲染多個片段。
 
 ---
 
 ## 快速開始
 
-```bash
-# 1. 生成字幕
-python generate_subtitles.py
+### WebAPI 模式
 
-# 2. 合成影片
-python batch_video_assembler.py /path/to/素材資料夾
+```bash
+# 啟動伺服器
+uvicorn api.main:app --reload --port 8000
+
+# 開啟 Swagger UI
+open http://localhost:8000/docs
 ```
 
-### 素材資料夾結構
+### CLI 模式
+
+```bash
+# 完整流程
+python -m cli.batch_video_assembler /path/to/素材
+
+# 僅生成字幕
+python -m cli.batch_video_assembler /path/to/素材 --subtitle-only
+
+# 僅合成影片
+python -m cli.batch_video_assembler /path/to/素材 --video-only
+```
+
+---
+
+## 素材資料夾結構
 
 ```
 素材資料夾/
-├── avatar_full.mp4    # 必須：主播影片 (音訊來源)
-├── script.txt         # 字幕生成用：逐字稿
-├── 1.mp3, 2.mp3...    # 切片語音
-├── 1.png, 2.png...    # 對應簡報圖片
-└── full_subtitle.srt  # 生成的字幕檔
+├── avatar_full.mp4        # 必須：主播影片 (音訊來源)
+├── full_script.txt        # 字幕生成用：逐字稿
+├── 1.mp3, 2.mp3...        # 切片語音
+├── 1.png, 2.png...        # 對應簡報圖片
+└── full_subtitle.srt      # 生成的字幕檔
 ```
 
 ---
@@ -146,13 +272,43 @@ python batch_video_assembler.py /path/to/素材資料夾
 
 ```mermaid
 graph TD
-    BVA[batch_video_assembler.py] --> CFG[config.py]
-    BVA --> ENG[engines/ffmpeg_engine.py]
-    ENG --> CFG
-    GS[generate_subtitles.py] --> CFG
+    subgraph "入口層"
+        API[api/main.py]
+        CLI[cli/batch_video_assembler.py]
+    end
     
-    ENG -.-> FFMPEG[FFmpeg CLI]
-    ENG -.-> NUMPY[numpy/scipy]
-    GS -.-> OPENAI[OpenAI API]
-    GS -.-> OPENCC[OpenCC]
+    subgraph "服務層"
+        VP[VideoProcessor]
+        SS[SubtitleService]
+        AS[AssemblyService]
+    end
+    
+    subgraph "引擎層"
+        ENG[ffmpeg_engine.py]
+    end
+    
+    subgraph "整合層"
+        OPENAI[OpenAIClient]
+        GDRIVE[GoogleDriveClient]
+    end
+    
+    subgraph "外部依賴"
+        FFMPEG[FFmpeg CLI]
+        OAI_SDK[openai SDK]
+        GAPI[google-api-python-client]
+        FASTAPI[FastAPI]
+    end
+    
+    API --> VP
+    API --> GDRIVE
+    CLI --> VP
+    VP --> SS
+    VP --> AS
+    AS --> ENG
+    SS --> OPENAI
+    
+    ENG -.-> FFMPEG
+    OPENAI -.-> OAI_SDK
+    GDRIVE -.-> GAPI
+    API -.-> FASTAPI
 ```
