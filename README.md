@@ -28,6 +28,7 @@ AutoVideoMaker/
 │   └── ffmpeg_engine.py
 ├── integrations/              # 外部服務整合
 │   ├── openai_client.py       # OpenAI API
+│   ├── openrouter_client.py   # OpenRouter API
 │   └── google_drive.py        # Google Drive API
 ├── config.py                  # 共用設定
 └── service_account.json       # Google 認證金鑰
@@ -38,7 +39,7 @@ AutoVideoMaker/
 * **WebAPI + CLI 雙入口**：支援自動化整合與手動操作
 * **Google Drive 整合**：從雲端下載素材，處理後自動上傳
 * **完美拼接**：音訊指紋對齊，保證聲畫同步
-* **AI 智控字幕**：Whisper + GPT 智慧斷句（每行 ≤18 字）
+* **AI 智控字幕**：Whisper + Claude 3.5 Sonnet 智慧斷句（每行 ≤18 字）
 * **非同步處理**：長時間任務背景執行，完成後 Webhook 通知
 
 ---
@@ -125,7 +126,8 @@ pip install numpy opencc-python-reimplemented openai python-dotenv \
 
 建立 `.env` 檔案：
 ```
-OPENAI_API_KEY=sk-your-api-key
+OPENAI_API_KEY=sk-your-openai-key
+OPENROUTER_API_KEY=sk-or-your-openrouter-key
 ```
 
 ### Google Drive 設定
@@ -152,6 +154,7 @@ OPENAI_API_KEY=sk-your-api-key
 
 - `output.mp4` - 合成後的影片
 - `full_subtitle.srt` - 生成的字幕檔
+- `_debug_sanitized_script.txt` - 清洗後的逐字稿
 - `_debug_step1_whisper.json` - Whisper 辨識結果
 - `_debug_step2_alignment.json` - Force Alignment 結果
 
@@ -178,6 +181,7 @@ graph TD
     
     subgraph "整合層"
         OAI[OpenAI Client]
+        OR[OpenRouter Client]
         GD[Google Drive Client]
     end
     
@@ -186,6 +190,7 @@ graph TD
     VP --> SS
     VP --> AS
     SS --> OAI
+    SS --> OR
     AS --> ENG
     API --> GD
 ```

@@ -25,6 +25,7 @@ AutoVideoMaker/
 │
 ├── integrations/              # 🔌 外部服務整合
 │   ├── openai_client.py           # OpenAI API（Whisper/GPT）
+│   └── openrouter_client.py       # OpenRouter API (Claude)
 │   └── google_drive.py            # Google Drive API
 │
 ├── config.py                  # 📋 共用設定參數
@@ -55,6 +56,7 @@ graph TB
     
     subgraph "整合層 (Integrations)"
         OPENAI[OpenAIClient]
+        OPENROUTER[OpenRouterClient]
         GDRIVE[GoogleDriveClient]
     end
     
@@ -66,6 +68,7 @@ graph TB
     VP --> AS
     AS --> ENG
     SS --> OPENAI
+    SS --> OPENROUTER
 ```
 
 ---
@@ -80,10 +83,11 @@ graph TB
 | **CLI** | `cli/batch_video_assembler.py` | 影片合成 CLI 入口 |
 | **CLI** | `cli/generate_subtitles.py` | 字幕生成 CLI 入口 |
 | **服務** | `services/video_processor.py` | 統一入口：串接字幕生成 + 影片合成 |
-| **服務** | `services/subtitle_service.py` | Whisper → DTW 對齊 → GPT 斷句 → SRT |
+| **服務** | `services/subtitle_service.py` | Whisper → 符號清洗 → Alignment → Claude 斷句 → SRT |
 | **服務** | `services/assembly_service.py` | 素材驗證，呼叫 ffmpeg_engine 合成 |
 | **引擎** | `engines/ffmpeg_engine.py` | 音訊對齊、平行渲染、Avatar 遮罩 |
-| **整合** | `integrations/openai_client.py` | OpenAI API（Whisper/GPT）封裝 |
+| **整合** | `integrations/openai_client.py` | OpenAI API（Whisper）封裝 |
+| **整合** | `integrations/openrouter_client.py` | OpenRouter API（Claude）封裝 |
 | **整合** | `integrations/google_drive.py` | Google Drive 下載/上傳功能 |
 | **設定** | `config.py` | 影片規格、字幕樣式、Avatar 位置 |
 
@@ -121,9 +125,10 @@ class VideoProcessor:
 ```python
 class SubtitleService:
     def generate(folder_path, debug)           # 主入口
+    def _sanitize_script(text)                 # 符號清洗
     def _step1_transcribe_whisper(audio_path)  # Whisper API
     def _step2_force_alignment(whisper_ts, script)
-    def _step3_segment_text(transcript)        # GPT 斷句
+    def _step3_segment_text(transcript)        # Claude 斷句
     def _step4_align_timestamps(lines, chars)
 ```
 
@@ -147,6 +152,15 @@ class OpenAIClient:
     def chat_completion(system_prompt, user_prompt)
 
 def get_openai_client() -> OpenAIClient
+
+### `integrations/openrouter_client.py`
+
+```python
+class OpenRouterClient:
+    def chat_completion(system_prompt, user_prompt)
+
+def get_openrouter_client() -> OpenRouterClient
+```
 ```
 
 ---
@@ -198,6 +212,7 @@ flowchart LR
 
     subgraph "整合層"
         OAI[OpenAIClient]
+        OR[OpenRouterClient]
         GD[GoogleDriveClient]
     end
 
@@ -214,6 +229,7 @@ flowchart LR
     A --> SS
     B --> SS
     SS --> OAI
+    SS --> OR
     SS --> SRT[full_subtitle.srt]
     
     A --> AS
@@ -289,6 +305,7 @@ graph TD
     
     subgraph "整合層"
         OPENAI[OpenAIClient]
+        OPENROUTER[OpenRouterClient]
         GDRIVE[GoogleDriveClient]
     end
     
