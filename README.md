@@ -68,13 +68,29 @@ graph TD
 
 ## 🌐 WebAPI 使用
 
-### 啟動伺服器
+### 1. 啟動伺服器
+
+**Mac / Linux**:
 
 ```bash
 cd /Users/a01-0218-0512/Documents/AutoVideoMaker
 source venv/bin/activate
 uvicorn api.main:app --reload --port 8000
 ```
+
+**Windows (PowerShell)**:
+
+```powershell
+cd C:\path\to\AutoVideoMaker
+.\venv\Scripts\Activate.ps1
+uvicorn api.main:app --reload --port 8000
+```
+
+### 2. 啟用 Swagger UI
+
+啟動伺服器後，請在瀏覽器開啟以下網址以查看 API 文件並進行測試：
+
+👉 **http://localhost:8000/docs**
 
 ### API 端點
 
@@ -85,9 +101,6 @@ uvicorn api.main:app --reload --port 8000
 | `/api/process-local` | POST | 處理本地素材（測試用） |
 | `/api/jobs/{job_id}` | GET | 查詢任務狀態 |
 
-### Swagger UI
-
-👉 http://localhost:8000/docs
 
 ### 範例請求
 
