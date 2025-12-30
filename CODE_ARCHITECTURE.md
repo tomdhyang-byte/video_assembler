@@ -46,7 +46,7 @@ graph TB
     
     subgraph "服務層 (Business Logic)"
         VP[VideoProcessor]
-        SS[SubtitleService]
+        SS[SubtitleService<br/>(含標點跳過演算法)]
         AS[AssemblyService]
     end
     
@@ -56,7 +56,7 @@ graph TB
     
     subgraph "整合層 (Integrations)"
         OPENAI[OpenAIClient]
-        OPENROUTER[OpenRouterClient]
+        OPENROUTER[OpenRouterClient<br/>(Claude 3.5 Sonnet)]
         GDRIVE[GoogleDriveClient]
     end
     
@@ -83,11 +83,11 @@ graph TB
 | **CLI** | `cli/batch_video_assembler.py` | 影片合成 CLI 入口 |
 | **CLI** | `cli/generate_subtitles.py` | 字幕生成 CLI 入口 |
 | **服務** | `services/video_processor.py` | 統一入口：串接字幕生成 + 影片合成 |
-| **服務** | `services/subtitle_service.py` | Whisper → 符號清洗 → Alignment → Claude 斷句 → SRT |
+| **服務** | `services/subtitle_service.py` | Whisper → 清洗 → 對齊(抗干擾) → Sonnet 4.5 斷句 → SRT |
 | **服務** | `services/assembly_service.py` | 素材驗證，呼叫 ffmpeg_engine 合成 |
 | **引擎** | `engines/ffmpeg_engine.py` | 音訊對齊、平行渲染、Avatar 遮罩 |
 | **整合** | `integrations/openai_client.py` | OpenAI API（Whisper）封裝 |
-| **整合** | `integrations/openrouter_client.py` | OpenRouter API（Claude）封裝 |
+| **整合** | `integrations/openrouter_client.py` | OpenRouter API（Claude 3.5 Sonnet）封裝 |
 | **整合** | `integrations/google_drive.py` | Google Drive 下載/上傳功能 |
 | **設定** | `config.py` | 影片規格、字幕樣式、Avatar 位置 |
 

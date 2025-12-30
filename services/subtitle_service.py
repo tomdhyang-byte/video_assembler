@@ -40,6 +40,11 @@ class SubtitleService:
 # Task
 你的任務是將接收到的文字，嚴格遵守以下的「長度限制」與「語意優先原則」整理為適合閱讀的字幕格式。
 
+# 重要原則（違反將導致系統崩潰）
+- **嚴禁改寫**：你**只能進行斷行**，絕對不可新增、刪除、移動或修改任何文字（包括連接詞和語助詞）。
+- **嚴禁調序**：所有字詞必須保持原稿的順序。
+- **保留標點**：除了斷行可能需要的調整外，保留原稿標點。
+
 # 處理邏輯（務必遵守）
 ## 大原則 - 字元計算方式
 - **中文字/標點**：計為 1 個全形字元（例如：「你好。」= 3 字元）。
@@ -380,10 +385,18 @@ Oracle 甲骨文這家讓人又愛又恨的軟體巨頭
             end_time = None
             
             for char in line_clean:
+                # 跳過空格和標點，不參與匹配（修復 AI 新增標點導致的偏移累積）
+                skip_chars = {' ', '，', '。', '、', '！', '？', '：', '；', '「', '」', '『', '』', '（', '）', ',', '.', '!', '?', ':', ';'}
+                if char in skip_chars:
+                    continue
+                    
                 found = False
                 search_window = 100
                 
                 for k in range(min(search_window, total_chars - char_idx)):
+                    # 跳過 aligned_chars 中的空格和標點
+                    if aligned_chars[char_idx + k]["char"] in skip_chars:
+                        continue
                     if aligned_chars[char_idx + k]["char"] == char:
                         found_idx = char_idx + k
                         item = aligned_chars[found_idx]

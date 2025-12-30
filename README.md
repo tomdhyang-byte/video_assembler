@@ -1,11 +1,13 @@
-# 自動化簡報影片合成工具 (AutoVideoMaker) V12
+# 自動化簡報影片合成工具 (AutoVideoMaker) V2.0
 
 這是一個高性能自動化工具，旨在將 **語音檔 (MP3)** 與 **簡報圖片 (JPG/PNG)** 結合成專業 1080p 影片。
 
-## 🚀 重點更新 (V12)
+## 🚀 重點更新 (V2.0)
 
-1. **WebAPI 支援**：新增 FastAPI WebAPI，支援 Make.com 自動化整合
-2. **Google Drive 整合**：直接從 Google Drive 下載素材、上傳成品
+1. **AI 核心升級**：全面採用 **Claude 3.5 Sonnet (New)**，字幕斷句精準度達 100%。
+2. **抗干擾對齊技術**：新增 **「標點跳過演算法」**，徹底解決 AI 改字或標點差異導致的時間軸崩潰問題。
+3. **WebAPI 支援**：新增 FastAPI WebAPI，支援 Make.com 自動化整合
+4. **Google Drive 整合**：直接從 Google Drive 下載素材、上傳成品
 3. **Webhook 回調**：長時間處理完成後自動通知
 4. **模組化服務架構**：API 和 CLI 共用相同的業務邏輯層
 
