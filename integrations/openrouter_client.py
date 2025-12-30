@@ -15,8 +15,8 @@ class OpenRouterClient:
     """OpenRouter API 客戶端"""
     
     # 預設設定
-    DEFAULT_MODEL = "anthropic/claude-sonnet-4.5"
-    DEFAULT_TEMPERATURE = 0.3
+    DEFAULT_MODEL = "openai/gpt-5.1"
+    DEFAULT_TEMPERATURE = 1.0
     BASE_URL = "https://openrouter.ai/api/v1"
     
     _instance = None
