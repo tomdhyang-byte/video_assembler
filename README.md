@@ -42,6 +42,28 @@ AutoVideoMaker/
 * **AI 智控字幕**：Whisper + Claude 3.5 Sonnet 智慧斷句（每行 ≤18 字）
 * **非同步處理**：長時間任務背景執行，完成後 Webhook 通知
 
+### 🧠 核心技術：雙重校正字幕流程
+
+我們採用獨特的「Whisper 時間軸 + 人工逐字稿校正」技術，確保字幕 100% 正確且時間精準：
+
+```mermaid
+graph TD
+    Script[正確逐字稿] --> Sanitize[1. 符號清洗]
+    Audio[音訊檔] --> Whisper[2. Whisper 辨識]
+    
+    Whisper -- 時間戳 --> Align[3. 強制對齊 (序列比對)]
+    Sanitize -- 正確文字 --> Align
+    
+    Align --> AlignedData[帶時間戳的正確文字]
+    
+    Script --> Claude[4. Claude 智慧斷句]
+    Claude -- 斷好的句子 --> Sync[5. 最終組裝]
+    AlignedData -- 查表 --> Sync
+    
+    Sync --> Clean[6. 去除結尾標點]
+    Clean --> SRT[最終 SRT 字幕]
+```
+
 ---
 
 ## 🌐 WebAPI 使用
