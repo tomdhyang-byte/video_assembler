@@ -40,6 +40,12 @@ def main():
     parser.add_argument("--subtitle-only", action="store_true", help="僅生成字幕")
     parser.add_argument("--video-only", action="store_true", help="僅合成影片")
     parser.add_argument("--no-debug", action="store_true", help="關閉除錯資訊（預設為開啟）")
+    parser.add_argument(
+        "--preset", 
+        choices=["ultrafast", "veryfast", "fast", "medium"],
+        default="medium",
+        help="編碼速度選項，veryfast 可加速 2-3 倍"
+    )
     parser.add_argument("-o", "--output", help="指定輸出路徑")
     args = parser.parse_args()
     
@@ -94,7 +100,11 @@ def main():
             # 僅合成影片
             print("🎬 模式：僅合成影片")
             print(f"📝 輸出路徑：{output_path}")
-            video_path = processor.assemble_video_only(folder_path, output_path)
+            video_path = processor.assemble_video_only(
+                folder_path, 
+                output_path,
+                encoding_preset=args.preset
+            )
             print(f"\n✅ 影片合成完成：{video_path}")
             
         else:
@@ -105,6 +115,7 @@ def main():
                 folder_path, 
                 output_path,
                 skip_subtitle=args.skip_subtitle,
+                encoding_preset=args.preset,
                 debug=debug_mode
             )
             print(f"\n✅ 處理完成：{video_path}")

@@ -28,6 +28,7 @@ class VideoProcessor:
         folder_path: Path,
         output_path: Path = None,
         skip_subtitle: bool = False,
+        encoding_preset: str = "medium",
         debug: bool = True
     ) -> Path:
         """
@@ -66,7 +67,11 @@ class VideoProcessor:
         
         # 合成影片
         print("\n🎬 開始合成影片...")
-        video_path = self.assembly_service.assemble(folder_path, output_path)
+        video_path = self.assembly_service.assemble(
+            folder_path, 
+            output_path, 
+            encoding_preset=encoding_preset
+        )
         
         print("\n" + "=" * 60)
         print("✅ 完整流程處理完成！")
@@ -95,7 +100,8 @@ class VideoProcessor:
     def assemble_video_only(
         self,
         folder_path: Path,
-        output_path: Path = None
+        output_path: Path = None,
+        encoding_preset: str = "medium"
     ) -> Path:
         """
         僅合成影片（假設字幕已存在）
@@ -107,7 +113,11 @@ class VideoProcessor:
         Returns:
             生成的影片檔案路徑
         """
-        return self.assembly_service.assemble(folder_path, output_path)
+        return self.assembly_service.assemble(
+            folder_path, 
+            output_path,
+            encoding_preset=encoding_preset
+        )
     
     def validate(self, folder_path: Path) -> dict:
         """

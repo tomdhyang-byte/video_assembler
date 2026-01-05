@@ -25,7 +25,8 @@ class AssemblyService:
     def assemble(
         self, 
         folder_path: Path, 
-        output_path: Path = None
+        output_path: Path = None,
+        encoding_preset: str = "medium"
     ) -> Path:
         """
         合成影片的主入口
@@ -55,7 +56,7 @@ class AssemblyService:
         print(f"📝 輸出路徑：{output_path}")
         
         # 呼叫 FFmpeg 引擎
-        ffmpeg_engine.run(folder_path, output_path)
+        ffmpeg_engine.run(folder_path, output_path, encoding_preset=encoding_preset)
         
         return output_path
     

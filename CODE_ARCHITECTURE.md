@@ -79,13 +79,13 @@ graph TB
 |:---|:---|:---|
 | **API** | `api/main.py` | FastAPI 入口，CORS 設定 |
 | **API** | `api/routes.py` | 路由定義，背景任務，Webhook |
-| **API** | `api/schemas.py` | Pydantic 模型（VideoRequest, VideoResponse） |
-| **CLI** | `cli/batch_video_assembler.py` | 影片合成 CLI 入口 |
+| **API** | `api/schemas.py` | Pydantic 模型（VideoRequest, VideoResponse, EncodingPreset） |
+| **CLI** | `cli/batch_video_assembler.py` | 影片合成 CLI 入口 (新增 --preset) |
 | **CLI** | `cli/generate_subtitles.py` | 字幕生成 CLI 入口 |
 | **服務** | `services/video_processor.py` | 統一入口：串接字幕生成 + 影片合成 |
 | **服務** | `services/subtitle_service.py` | Whisper → 清洗 → 對齊(抗干擾) → Sonnet 4.5 斷句 → SRT |
 | **服務** | `services/assembly_service.py` | 素材驗證，呼叫 ffmpeg_engine 合成 |
-| **引擎** | `engines/ffmpeg_engine.py` | 音訊對齊、平行渲染、Avatar 遮罩 |
+| **引擎** | `engines/ffmpeg_engine.py` | 音訊對齊、平行渲染(支援 preset)、Avatar 遮罩 |
 | **整合** | `integrations/openai_client.py` | OpenAI API（Whisper）封裝 |
 | **整合** | `integrations/openrouter_client.py` | OpenRouter API（Claude 3.5 Sonnet）封裝 |
 | **整合** | `integrations/google_drive.py` | Google Drive 下載/上傳功能 |
@@ -114,9 +114,9 @@ async def send_webhook(...)         # Webhook 通知
 
 ```python
 class VideoProcessor:
-    def process(folder_path, output_path, skip_subtitle, debug)
+    def process(folder_path, output_path, skip_subtitle, encoding_preset, debug)
     def generate_subtitle_only(folder_path, debug)
-    def assemble_video_only(folder_path, output_path)
+    def assemble_video_only(folder_path, output_path, encoding_preset)
     def validate(folder_path)
 ```
 

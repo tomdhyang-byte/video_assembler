@@ -16,11 +16,23 @@ class JobStatus(str, Enum):
     FAILED = "failed"
 
 
+class EncodingPreset(str, Enum):
+    """編碼速度選項 (速度快 → 慢，品質低 → 高)"""
+    ULTRAFAST = "ultrafast"
+    VERYFAST = "veryfast"
+    FAST = "fast"
+    MEDIUM = "medium"  # 預設
+
+
 class VideoRequest(BaseModel):
     """影片處理請求"""
     drive_folder_id: str = Field(..., description="Google Drive 資料夾 ID")
     callback_url: str = Field(..., description="完成後通知的 Webhook URL (Make.com)")
     skip_subtitle: bool = Field(default=False, description="是否跳過字幕生成")
+    encoding_preset: EncodingPreset = Field(
+        default=EncodingPreset.MEDIUM,
+        description="編碼速度：ultrafast | veryfast | fast | medium（預設）。veryfast 約快 2-3 倍"
+    )
     
     model_config = {
         "json_schema_extra": {
@@ -28,7 +40,8 @@ class VideoRequest(BaseModel):
                 {
                     "drive_folder_id": "1abc123def456",
                     "callback_url": "https://hook.make.com/xxx",
-                    "skip_subtitle": False
+                    "skip_subtitle": False,
+                    "encoding_preset": "medium"
                 }
             ]
         }

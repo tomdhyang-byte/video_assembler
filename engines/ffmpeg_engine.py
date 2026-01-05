@@ -269,7 +269,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 # ============================================================
 # FFmpeg 影片處理
 # ============================================================
-def create_segment_videos(pairs: list, temp_dir: Path, durations: Dict[str, float]) -> List[Path]:
+def create_segment_videos(pairs: list, temp_dir: Path, durations: Dict[str, float], encoding_preset: str = "medium") -> List[Path]:
     """
     為每個圖片+音訊配對創建影片片段
     [平行處理版] 使用 ThreadPoolExecutor 平行生成，大幅加速
@@ -302,6 +302,7 @@ def create_segment_videos(pairs: list, temp_dir: Path, durations: Dict[str, floa
             '-i', str(image_path),
             '-i', str(mp3_path),
             '-c:v', VideoConfig.CODEC,
+            '-preset', encoding_preset,
             '-tune', 'stillimage',
             '-c:a', VideoConfig.AUDIO_CODEC,
             '-b:a', '192k',
@@ -461,7 +462,8 @@ def composite_final_video(
     avatar_video: Path,
     original_avatar_path: Path,  # 新增：原始 Avatar 檔案（音訊來源）
     ass_path: Path,
-    output_path: Path
+    output_path: Path,
+    encoding_preset: str = "medium"
 ):
     """
     最終合成：基礎軌 + Avatar 疊加 + 字幕燒錄
@@ -494,7 +496,7 @@ def composite_final_video(
         '-map', '[out]',                # 影像來自濾鏡輸出
         '-map', '2:a',                  # 音訊來自原始 Avatar
         '-c:v', VideoConfig.CODEC,
-        '-preset', VideoConfig.PRESET,
+        '-preset', encoding_preset,
         '-c:a', VideoConfig.AUDIO_CODEC,
         '-b:a', '192k',
         str(output_path)
@@ -513,7 +515,7 @@ def composite_final_video(
 # ============================================================
 # 引擎入口
 # ============================================================
-def run(folder_path: Path, output_path: Path):
+def run(folder_path: Path, output_path: Path, encoding_preset: str = "medium"):
     """
     FFmpeg 引擎主入口
     
@@ -622,8 +624,8 @@ def run(folder_path: Path, output_path: Path):
         temp_path = Path(temp_dir)
         
         # Step 1: 創建影片片段
-        print("\n🎞️  建立影片片段 (使用精確對齊時間)...")
-        segments = create_segment_videos(pairs, temp_path, exact_durations)
+        print(f"\n🎞️  建立影片片段 (使用精確對齊時間, Preset: {encoding_preset})...")
+        segments = create_segment_videos(pairs, temp_path, exact_durations, encoding_preset)
         
         # Step 2: 串接片段
         base_video = temp_path / "base_track.mp4"
@@ -642,4 +644,4 @@ def run(folder_path: Path, output_path: Path):
             generate_ass_file(subtitle_path, ass_path)
         
         # Step 5: 最終合成
-        composite_final_video(base_video, avatar_processed, avatar_path, ass_path, output_path)
+        composite_final_video(base_video, avatar_processed, avatar_path, ass_path, output_path, encoding_preset)

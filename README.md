@@ -196,7 +196,8 @@ curl -X POST "http://localhost:8000/api/process-video" \
   -d '{
     "drive_folder_id": "1abc123XYZ",
     "callback_url": "https://hook.make.com/xxx",
-    "skip_subtitle": false
+    "skip_subtitle": false,
+    "encoding_preset": "veryfast"
   }'
 ```
 
@@ -224,6 +225,9 @@ python -m cli.batch_video_assembler /路徑/到/素材 --skip-subtitle
 
 # 指定輸出路徑
 python -m cli.batch_video_assembler /路徑/到/素材 -o /輸出/位置/video.mp4
+
+# 指定編碼速度 (ultrafast / veryfast / fast / medium)
+python -m cli.batch_video_assembler /路徑/到/素材 --preset veryfast
 
 # 關閉除錯模式
 python -m cli.batch_video_assembler /路徑/到/素材 --no-debug

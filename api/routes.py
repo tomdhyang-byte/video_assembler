@@ -13,7 +13,8 @@ from .schemas import (
     VideoResponse, 
     WebhookPayload,
     JobStatus,
-    HealthResponse
+    HealthResponse,
+    EncodingPreset
 )
 from services.video_processor import VideoProcessor
 from integrations.google_drive import GoogleDriveClient
@@ -87,6 +88,7 @@ async def process_video_task(
                 local_folder, 
                 output_path,
                 skip_subtitle=skip_subtitle,
+                encoding_preset=encoding_preset,
                 debug=True
             )
             
@@ -154,7 +156,8 @@ async def process_local_task(
     job_id: str,
     folder_path: str,
     callback_url: str,
-    skip_subtitle: bool = False
+    skip_subtitle: bool = False,
+    encoding_preset: str = "medium"
 ):
     """
     背景任務：處理本地資料夾（測試用）
@@ -179,6 +182,7 @@ async def process_local_task(
             folder, 
             output_path,
             skip_subtitle=skip_subtitle,
+            encoding_preset=encoding_preset,
             debug=True
         )
         
@@ -248,7 +252,8 @@ async def process_video(request: VideoRequest, background_tasks: BackgroundTasks
         job_id=job_id,
         drive_folder_id=request.drive_folder_id,
         callback_url=request.callback_url,
-        skip_subtitle=request.skip_subtitle
+        skip_subtitle=request.skip_subtitle,
+        encoding_preset=request.encoding_preset.value
     )
     
     return VideoResponse(
@@ -263,7 +268,8 @@ async def process_local(
     folder_path: str,
     callback_url: str,
     background_tasks: BackgroundTasks,
-    skip_subtitle: bool = False
+    skip_subtitle: bool = False,
+    encoding_preset: EncodingPreset = EncodingPreset.MEDIUM
 ):
     """
     處理本地資料夾的影片素材（測試用）
@@ -271,6 +277,7 @@ async def process_local(
     - **folder_path**: 本地素材資料夾絕對路徑
     - **callback_url**: Webhook URL
     - **skip_subtitle**: 是否跳過字幕生成
+    - **encoding_preset**: 編碼速度 (ultrafast/veryfast/fast/medium)
     """
     job_id = generate_job_id()
     
@@ -287,7 +294,8 @@ async def process_local(
         job_id=job_id,
         folder_path=folder_path,
         callback_url=callback_url,
-        skip_subtitle=skip_subtitle
+        skip_subtitle=skip_subtitle,
+        encoding_preset=encoding_preset.value
     )
     
     return VideoResponse(
