@@ -27,5 +27,17 @@
 
 ## 5. 字幕亂碼
 - **現象**：生成的影片字幕顯示為方塊 [] [] []。
-- **原因**：Docker 容器或系統中缺少支援中文的字體。
-- **解法**：設定檔指名使用 `NotoSansTC-Bold.otf`，並確保該字體檔案存在於 `assets/fonts/` 目錄下。
+- **原因**：系統找不到支援中文的字體。
+- **解法**：
+    1. 系統會自動偵測平台預設字體（macOS 用 PingFang，Windows 用微軟正黑體）。
+    2. 如需自訂字體，設定環境變數 `FONT_PATH=/path/to/font.ttc`。
+    3. Docker 環境須確保容器內有中文字體。
+
+## 6. Windows 路徑轉義事件 (Jan 2025)
+- **現象**：Windows 上執行影片合成時，FFmpeg 報錯 `Unable to parse option value as image size`。
+- **原因**：FFmpeg 的 `ass` 濾鏡對 Windows 路徑（含 `C:` 盤符）有特殊的轉義要求，直接使用 `as_posix()` 不夠。
+- **解法**：
+    1. 實作 `utils/platform_utils.py` 的 `escape_ffmpeg_filter_path()` 函數。
+    2. 自動偵測平台，Windows 上額外轉義冒號和空格。
+    3. **教訓**：FFmpeg CLI 在不同 OS 上的行為差異比想像中大，應統一用抽象層處理。
+

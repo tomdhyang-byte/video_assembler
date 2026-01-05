@@ -25,6 +25,8 @@ from config import (
     IGNORE_FILES
 )
 
+from utils.platform_utils import escape_ffmpeg_filter_path
+
 
 # ============================================================
 # 工具函數
@@ -474,8 +476,7 @@ def composite_final_video(
     # 構建濾鏡
     if ass_path and ass_path.exists():
         # 有字幕：疊加 Avatar + 燒錄字幕
-        # 跨平台路徑處理：使用 as_posix() 統一為正斜線，再轉義冒號
-        ass_escaped = ass_path.as_posix().replace(":", "\\:")
+        ass_escaped = escape_ffmpeg_filter_path(ass_path)
         filter_complex = (
             f"[0:v][1:v]overlay={pos_x}:{pos_y}[composited];"  # 移除 shortest=1，讓長度跟隨最長的流（通常是音訊）
             f"[composited]ass='{ass_escaped}'[out]"

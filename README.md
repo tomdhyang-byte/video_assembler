@@ -8,8 +8,9 @@
 2. **抗干擾對齊技術**：新增 **「標點跳過演算法」**，徹底解決 AI 改字或標點差異導致的時間軸崩潰問題。
 3. **WebAPI 支援**：新增 FastAPI WebAPI，支援 Make.com 自動化整合
 4. **Google Drive 整合**：直接從 Google Drive 下載素材、上傳成品
-3. **Webhook 回調**：長時間處理完成後自動通知
-4. **模組化服務架構**：API 和 CLI 共用相同的業務邏輯層
+5. **Webhook 回調**：長時間處理完成後自動通知
+6. **模組化服務架構**：API 和 CLI 共用相同的業務邏輯層
+7. **跨平台支援**：Windows 與 macOS 自動偵測字體與路徑處理
 
 ## 📁 專案架構
 
@@ -32,6 +33,10 @@ AutoVideoMaker/
 │   ├── openai_client.py       # OpenAI API
 │   ├── openrouter_client.py   # OpenRouter API
 │   └── google_drive.py        # Google Drive API
+├── utils/                     # 工具模組
+│   └── platform_utils.py      # 跨平台工具 (路徑、字體偵測)
+├── tests/                     # 單元測試
+│   └── test_platform_utils.py
 ├── config.py                  # 共用設定
 └── service_account.json       # Google 認證金鑰
 ```
@@ -149,15 +154,54 @@ python -m cli.batch_video_assembler /路徑/到/素材 --no-debug
 
 ## 📦 環境設定
 
-### 安裝依賴
+### 系統需求
 
+- **Python**: 3.10 或以上
+- **FFmpeg**: 必須安裝並加入 PATH
+
+### Step 1: 安裝 FFmpeg
+
+**macOS** (使用 Homebrew):
 ```bash
+brew install ffmpeg
+```
+
+**Windows** (使用 Chocolatey):
+```powershell
+choco install ffmpeg
+```
+
+或從 [FFmpeg 官網](https://ffmpeg.org/download.html) 下載，解壓後將 `bin` 目錄加入系統 PATH。
+
+**驗證安裝**:
+```bash
+ffmpeg -version
+```
+
+### Step 2: 建立 Python 環境
+
+**macOS / Linux**:
+```bash
+cd /path/to/AutoVideoMaker
 python3 -m venv venv
 source venv/bin/activate
-pip install numpy opencc-python-reimplemented openai python-dotenv \
-            fastapi uvicorn httpx pydantic \
-            google-auth google-auth-oauthlib google-api-python-client
+pip install -r requirements.txt
 ```
+
+**Windows (PowerShell)**:
+```powershell
+cd C:\path\to\AutoVideoMaker
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+> 如果沒有 `requirements.txt`，可手動安裝：
+> ```bash
+> pip install numpy opencc-python-reimplemented openai python-dotenv \
+>             fastapi uvicorn httpx pydantic \
+>             google-auth google-auth-oauthlib google-api-python-client
+> ```
 
 ### 環境變數
 
@@ -165,7 +209,12 @@ pip install numpy opencc-python-reimplemented openai python-dotenv \
 ```
 OPENAI_API_KEY=sk-your-openai-key
 OPENROUTER_API_KEY=sk-or-your-openrouter-key
+FONT_PATH=/path/to/custom/font.ttc  # 可選：自訂字體路徑
 ```
+
+> **跨平台字體說明**：若未設定 `FONT_PATH`，系統會自動偵測：
+> - **macOS**：使用 PingFang (蘋方)
+> - **Windows**：使用 Microsoft JhengHei (微軟正黑體)
 
 ### Google Drive 設定
 

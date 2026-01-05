@@ -24,6 +24,7 @@ graph TD
         OAI[OpenAI Client]
         OR[OpenRouter Client]
         GD[Google Drive Client]
+        PU[Platform Utils]
     end
     
     API --> VP
@@ -31,6 +32,7 @@ graph TD
     VP --> SS
     VP --> AS
     AS --> ENG
+    ENG --> PU
     SS --> OAI
     SS --> OR
 ```
@@ -44,6 +46,7 @@ graph TD
 | **services/subtitle_service.py** | 生成 SRT 字幕、時間軸對齊 | 不要處理影片合成、不要處理音訊合併 |
 | **services/assembly_service.py** | 準備素材清單、計算片段長度 | 不要執行實際的渲染指令 (交給 Engine) |
 | **engines/ffmpeg_engine.py** | 執行 FFmpeg 指令、濾鏡處理 | 不要包含業務邏輯 (如判斷是否跳過字幕) |
+| **utils/platform_utils.py** | 跨平台差異處理 (路徑轉義、字體偵測) | 不要包含業務邏輯，僅處理 OS 差異 |
 
 ## 3. 關鍵設計原則
 

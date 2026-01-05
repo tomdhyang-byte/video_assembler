@@ -13,7 +13,14 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from api.routes import router
+from utils.platform_utils import validate_ffmpeg_installed, get_default_font_path, get_platform
 
+# 啟動時環境檢查
+print(f"🖥️  Platform: {get_platform()}")
+print(f"🔤 Font: {get_default_font_path()}")
+
+if not validate_ffmpeg_installed():
+    print("⚠️  Warning: FFmpeg not found in PATH! Video processing will fail.")
 
 # 建立 FastAPI 應用
 app = FastAPI(

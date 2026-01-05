@@ -2,7 +2,9 @@
 共用設定檔 - 雙引擎架構（MoviePy / FFmpeg）共用參數
 """
 
+import os
 from pathlib import Path
+from utils.platform_utils import get_default_font_path
 
 
 # ============================================================
@@ -33,7 +35,14 @@ class SubtitleConfig:
     FONT_SIZE = 96  # 調整 (64 → 128 → 96)
     STROKE_WIDTH = 6
     CENTER_Y = 1000  # 字幕視覺中心的 Y 座標
-    FONT_PATH = "/System/Library/Fonts/PingFang.ttc"
+    
+    # 跨平台字體設定：優先讀取環境變數，否則使用平台預設值
+    FONT_PATH = os.getenv("FONT_PATH") or get_default_font_path()
+    
+    # 如果找不到任何字體，給予一個警示值 (API 啟動時會檢查)
+    if FONT_PATH is None:
+        FONT_PATH = "FONT_NOT_FOUND"
+        
     COLOR = "yellow"
     STROKE_COLOR = "black"
     # ASS 格式專用（FFmpeg 引擎）
