@@ -152,6 +152,7 @@ class OpenAIClient:
     def chat_completion(system_prompt, user_prompt)
 
 def get_openai_client() -> OpenAIClient
+```
 
 ### `integrations/openrouter_client.py`
 
@@ -160,7 +161,6 @@ class OpenRouterClient:
     def chat_completion(system_prompt, user_prompt)
 
 def get_openrouter_client() -> OpenRouterClient
-```
 ```
 
 ---

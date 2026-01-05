@@ -5,7 +5,6 @@ API 路由定義
 import uuid
 import httpx
 import tempfile
-import shutil
 from pathlib import Path
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 
