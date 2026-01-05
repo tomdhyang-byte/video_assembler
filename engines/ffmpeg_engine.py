@@ -83,6 +83,10 @@ def get_audio_duration(audio_path: Path) -> float:
         '-of', 'default=noprint_wrappers=1:nokey=1',
         str(audio_path)
     ], capture_output=True, text=True)
+    
+    if result.returncode != 0 or not result.stdout.strip():
+        raise RuntimeError(f"無法取得音訊長度：{audio_path}")
+        
     return float(result.stdout.strip())
 
 
@@ -94,6 +98,10 @@ def get_video_duration(video_path: Path) -> float:
         '-of', 'default=noprint_wrappers=1:nokey=1',
         str(video_path)
     ], capture_output=True, text=True)
+    
+    if result.returncode != 0 or not result.stdout.strip():
+        raise RuntimeError(f"無法取得影片長度：{video_path}")
+        
     return float(result.stdout.strip())
 
 
@@ -381,6 +389,32 @@ def concat_segments(segments: List[Path], output_path: Path):
         os.unlink(filelist_path)
 
 
+def _create_circular_mask_png(size: int, temp_dir: Path) -> Path:
+    """
+    產生單張圓形遮罩 PNG (白色圓形，黑色背景)
+    用於 alphamerge 高效合成
+    """
+    mask_path = temp_dir / "circle_mask.png"
+    radius = size // 2
+    
+    # 使用 geq 產生一張靜態遮罩 (比起對每幀影片做 geq 快得多)
+    cmd = [
+        'ffmpeg', '-y',
+        '-f', 'lavfi',
+        '-i', f'color=black:s={size}x{size}:d=0.01',
+        '-vf', f"format=gray,geq=lum='if(lte(sqrt(pow(X-{radius},2)+pow(Y-{radius},2)),{radius}),255,0)'",
+        '-frames:v', '1',
+        str(mask_path)
+    ]
+    
+    result = subprocess.run(cmd, capture_output=True)
+    if result.returncode != 0:
+        print(f"⚠️  遮罩生成失敗: {result.stderr if result.stderr else 'unknown'}")
+        return None
+        
+    return mask_path
+
+
 def create_avatar_overlay_video(avatar_path: Path, duration: float, temp_dir: Path) -> Path:
     """
     處理 Avatar 影片：裁切 → 縮放 → 圓形遮罩
@@ -408,50 +442,90 @@ def create_avatar_overlay_video(avatar_path: Path, duration: float, temp_dir: Pa
     if avatar_duration < duration:
         print(f"   ℹ️  Avatar 較短（{avatar_duration:.2f}s），將在 {avatar_duration:.2f}s 後消失")
     
-    # FFmpeg 複雜濾鏡：裁切 → 縮放 → 圓形遮罩（使用 geq 濾鏡）
-    # geq 濾鏡計算每個像素到中心的距離，超出半徑則透明
-    radius = target_size // 2
-    center = target_size // 2
+    # 嘗試使用 alphamerge 優化方案
+    mask_path = _create_circular_mask_png(target_size, temp_dir)
     
-    # 使用 format=rgba 和 geq 來創建圓形遮罩
-    filter_complex = (
-        f"crop={crop_size}:{crop_size}:{crop_x}:{crop_y},"
-        f"scale={target_size}:{target_size},"
-        f"format=rgba,"
-        f"geq=lum='p(X,Y)':a='if(gt(sqrt(pow(X-{center},2)+pow(Y-{center},2)),{radius}),0,255)'"
-    )
+    cmd = []
+    use_fallback = False
     
-    cmd = [
-        'ffmpeg', '-y',
-        '-i', str(avatar_path),
-        '-vf', filter_complex,
-        '-c:v', 'qtrle',  # QuickTime Animation codec 支援 RGBA
-        '-t', str(actual_duration),
-        '-an',  # 無音訊
-        str(output_avatar)
-    ]
-    
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        print(f"⚠️  Avatar 處理警告：{result.stderr[-300:] if result.stderr else 'unknown'}")
-        # 如果 geq 失敗，嘗試不使用圓形遮罩的備用方案
-        print("   ⚠️  嘗試備用方案（無圓形遮罩）...")
-        fallback_filter = (
-            f"crop={crop_size}:{crop_size}:{crop_x}:{crop_y},"
-            f"scale={target_size}:{target_size}"
+    if mask_path and mask_path.exists():
+        # 方案 A: 使用靜態遮罩 + alphamerge (高效)
+        # 1. [0:v] 裁切 + 縮放 + 轉為 yuva420p (支援 Alpha)
+        # 2. [1:v] 讀取遮罩 + loop 無限循環
+        # 3. [vid][mask] 合併
+        
+        filter_complex = (
+            f"[0:v]crop={crop_size}:{crop_size}:{crop_x}:{crop_y},"
+            f"scale={target_size}:{target_size},"
+            f"format=yuva420p[vid];"
+            f"[1:v]loop=-1:1:0[mask];"
+            f"[vid][mask]alphamerge"
         )
-        fallback_cmd = [
+        
+        cmd = [
             'ffmpeg', '-y',
             '-i', str(avatar_path),
-            '-vf', fallback_filter,
-            '-c:v', VideoConfig.CODEC,
+            '-i', str(mask_path),  # Input 1: Mask
+            '-filter_complex', filter_complex,
+            '-c:v', 'qtrle',
             '-t', str(actual_duration),
             '-an',
             str(output_avatar)
         ]
-        result = subprocess.run(fallback_cmd, capture_output=True, text=True)
+    else:
+        use_fallback = True
+        print("⚠️  無法生成遮罩，將使用 geq 濾鏡 (較慢)")
+
+    # 執行 FFmpeg
+    if not use_fallback:
+        result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
-            raise RuntimeError(f"Avatar 處理失敗：{result.stderr[-300:]}")
+            print(f"⚠️  alphamerge 失敗: {result.stderr[-300:] if result.stderr else 'unknown'}")
+            use_fallback = True
+    
+    # 方案 B: 原有的 geq 濾鏡 (備用)
+    if use_fallback:
+        radius = target_size // 2
+        center = target_size // 2
+        
+        filter_complex = (
+            f"crop={crop_size}:{crop_size}:{crop_x}:{crop_y},"
+            f"scale={target_size}:{target_size},"
+            f"format=rgba,"
+            f"geq=lum='p(X,Y)':a='if(gt(sqrt(pow(X-{center},2)+pow(Y-{center},2)),{radius}),0,255)'"
+        )
+        
+        cmd = [
+            'ffmpeg', '-y',
+            '-i', str(avatar_path),
+            '-vf', filter_complex,
+            '-c:v', 'qtrle',
+            '-t', str(actual_duration),
+            '-an',
+            str(output_avatar)
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"⚠️  Avatar 處理警告：{result.stderr[-300:] if result.stderr else 'unknown'}")
+            # 如果 geq 失敗，嘗試不使用圓形遮罩的備用方案
+            print("   ⚠️  嘗試備用方案（無圓形遮罩）...")
+            fallback_filter = (
+                f"crop={crop_size}:{crop_size}:{crop_x}:{crop_y},"
+                f"scale={target_size}:{target_size}"
+            )
+            fallback_cmd = [
+                'ffmpeg', '-y',
+                '-i', str(avatar_path),
+                '-vf', fallback_filter,
+                '-c:v', VideoConfig.CODEC,
+                '-t', str(actual_duration),
+                '-an',
+                str(output_avatar)
+            ]
+            result = subprocess.run(fallback_cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise RuntimeError(f"Avatar 處理失敗：{result.stderr[-300:]}")
     
     print(f"   ✅ Avatar 處理完成")
     return output_avatar
