@@ -1,0 +1,22 @@
+# AutoVideoMaker Dependencies
+# Python 3.10+
+
+# === Core ===
+numpy>=2.0.0
+opencc-python-reimplemented>=0.1.7
+
+# === AI / ML ===
+openai>=2.0.0
+
+# === Web API ===
+fastapi>=0.100.0
+uvicorn>=0.30.0
+httpx>=0.28.0
+pydantic>=2.0.0
+python-dotenv>=1.0.0
+
+# === Google Drive ===
+google-api-python-client>=2.100.0
+google-auth>=2.0.0
+google-auth-oauthlib>=1.0.0
+google-auth-httplib2>=0.1.0

@@ -73,6 +73,80 @@ graph TD
 
 ---
 
+## 📦 環境設定
+
+### 系統需求
+
+- **Python**: 3.10 或以上
+- **FFmpeg**: 必須安裝並加入 PATH
+
+### Step 1: 安裝 FFmpeg
+
+**macOS** (使用 Homebrew):
+```bash
+brew install ffmpeg
+```
+
+**Windows** (使用 Chocolatey):
+```powershell
+choco install ffmpeg
+```
+
+或從 [FFmpeg 官網](https://ffmpeg.org/download.html) 下載，解壓後將 `bin` 目錄加入系統 PATH。
+
+**驗證安裝**:
+```bash
+ffmpeg -version
+```
+
+### Step 2: 建立 Python 環境
+
+**macOS / Linux**:
+```bash
+cd /path/to/AutoVideoMaker
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+**Windows (PowerShell)**:
+```powershell
+cd C:\path\to\AutoVideoMaker
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+> 如果沒有 `requirements.txt`，可手動安裝：
+> ```bash
+> pip install numpy opencc-python-reimplemented openai python-dotenv \
+>             fastapi uvicorn httpx pydantic \
+>             google-auth google-auth-oauthlib google-api-python-client
+> ```
+
+### Step 3: 環境變數
+
+建立 `.env` 檔案：
+```
+OPENAI_API_KEY=sk-your-openai-key
+OPENROUTER_API_KEY=sk-or-your-openrouter-key
+FONT_PATH=/path/to/custom/font.ttc  # 可選：自訂字體路徑
+```
+
+> **跨平台字體說明**：若未設定 `FONT_PATH`，系統會自動偵測：
+> - **macOS**：使用 PingFang (蘋方)
+> - **Windows**：使用 Microsoft JhengHei (微軟正黑體)
+
+### Step 4: Google Drive 設定（可選）
+
+1. 建立 Google Cloud 專案
+2. 啟用 Google Drive API
+3. 建立 Service Account 並下載 JSON 金鑰
+4. 將金鑰檔案放到專案目錄，命名為 `service_account.json`
+5. 將 Service Account Email 加入共用雲端硬碟
+
+---
+
 ## 🌐 WebAPI 使用
 
 ### 1. 啟動伺服器
@@ -80,7 +154,7 @@ graph TD
 **Mac / Linux**:
 
 ```bash
-cd /Users/a01-0218-0512/Documents/AutoVideoMaker
+cd /path/to/AutoVideoMaker
 source venv/bin/activate
 uvicorn api.main:app --reload --port 8000
 ```
@@ -149,80 +223,6 @@ python -m cli.batch_video_assembler /路徑/到/素材 -o /輸出/位置/video.m
 # 關閉除錯模式
 python -m cli.batch_video_assembler /路徑/到/素材 --no-debug
 ```
-
----
-
-## 📦 環境設定
-
-### 系統需求
-
-- **Python**: 3.10 或以上
-- **FFmpeg**: 必須安裝並加入 PATH
-
-### Step 1: 安裝 FFmpeg
-
-**macOS** (使用 Homebrew):
-```bash
-brew install ffmpeg
-```
-
-**Windows** (使用 Chocolatey):
-```powershell
-choco install ffmpeg
-```
-
-或從 [FFmpeg 官網](https://ffmpeg.org/download.html) 下載，解壓後將 `bin` 目錄加入系統 PATH。
-
-**驗證安裝**:
-```bash
-ffmpeg -version
-```
-
-### Step 2: 建立 Python 環境
-
-**macOS / Linux**:
-```bash
-cd /path/to/AutoVideoMaker
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
-
-**Windows (PowerShell)**:
-```powershell
-cd C:\path\to\AutoVideoMaker
-python -m venv venv
-.\venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-```
-
-> 如果沒有 `requirements.txt`，可手動安裝：
-> ```bash
-> pip install numpy opencc-python-reimplemented openai python-dotenv \
->             fastapi uvicorn httpx pydantic \
->             google-auth google-auth-oauthlib google-api-python-client
-> ```
-
-### 環境變數
-
-建立 `.env` 檔案：
-```
-OPENAI_API_KEY=sk-your-openai-key
-OPENROUTER_API_KEY=sk-or-your-openrouter-key
-FONT_PATH=/path/to/custom/font.ttc  # 可選：自訂字體路徑
-```
-
-> **跨平台字體說明**：若未設定 `FONT_PATH`，系統會自動偵測：
-> - **macOS**：使用 PingFang (蘋方)
-> - **Windows**：使用 Microsoft JhengHei (微軟正黑體)
-
-### Google Drive 設定
-
-1. 建立 Google Cloud 專案
-2. 啟用 Google Drive API
-3. 建立 Service Account 並下載 JSON 金鑰
-4. 將金鑰檔案放到專案目錄，命名為 `service_account.json`
-5. 將 Service Account Email 加入共用雲端硬碟
 
 ---
 
