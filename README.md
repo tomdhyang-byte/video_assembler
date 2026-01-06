@@ -294,4 +294,4 @@ graph TD
 
 ## 📚 更多文件
 
-詳細的程式碼架構與模組說明，請參考 [CODE_ARCHITECTURE.md](./CODE_ARCHITECTURE.md)。
+詳細的程式碼架構與模組說明，請參考 [ARCHITECTURE.md](./instructions/ARCHITECTURE.md)。
