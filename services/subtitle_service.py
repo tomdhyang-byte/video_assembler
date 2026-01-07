@@ -326,11 +326,29 @@ Oracle 甲骨文這家讓人又愛又恨的軟體巨頭
                     current_time = whisper_chars[i2-1]["end"]
                 
             elif tag == 'insert':
-                for k in range(j2 - j1):
+                # Whisper 漏掉的字（但 Script 有）：執行 Look-ahead 插值
+                # 1. 向後尋找下一個已知時間戳
+                next_time = current_time
+                remaining_ops = matcher.get_opcodes()[matcher.get_opcodes().index((tag, i1, i2, j1, j2)) + 1:]
+                
+                for next_tag, ni1, ni2, nj1, nj2 in remaining_ops:
+                    # 只要下一個操作有用到 Whisper 的字元，就能取得時間
+                    if next_tag in ('equal', 'replace', 'delete') and ni1 < len(whisper_chars):
+                        next_time = whisper_chars[ni1]["start"]
+                        break
+                
+                # 2. 計算時間間隙與分攤
+                gap_duration = next_time - current_time
+                num_chars = j2 - j1
+                
+                # 若 gap 太大（例如 > 10秒），可能造成字幕顯示過久，但仍比疊在一起好
+                char_duration = gap_duration / num_chars if num_chars > 0 else 0
+                
+                for k in range(num_chars):
                     aligned_results.append({
                         "char": script_str[j1 + k],
-                        "start": current_time,
-                        "end": current_time
+                        "start": current_time + (k * char_duration),
+                        "end": current_time + ((k + 1) * char_duration)
                     })
         
         print(f"   ✅ Force Alignment 完成 (共 {len(aligned_results)} 個字元)")
