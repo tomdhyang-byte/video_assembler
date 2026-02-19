@@ -184,10 +184,13 @@ Oracle 甲骨文這家讓人又愛又恨的軟體巨頭
         if not script_path.exists():
             raise FileNotFoundError(f"找不到逐字稿：{script_path}")
     
+    # Whisper API 檔案大小上限 (25MB)
+    WHISPER_MAX_SIZE = 25 * 1024 * 1024
+
     def _extract_audio(self, video_path: Path, output_path: Path) -> Path:
-        """從 Avatar 影片提取音軌"""
+        """從 Avatar 影片提取音軌（自動壓縮至 Whisper 25MB 上限內）"""
         print("\n🔊 從 Avatar 影片提取音軌...")
-        
+
         result = subprocess.run([
             'ffmpeg', '-y',
             '-i', str(video_path),
@@ -196,10 +199,46 @@ Oracle 甲骨文這家讓人又愛又恨的軟體巨頭
             '-q:a', '2',
             str(output_path)
         ], capture_output=True, text=True)
-        
+
         if result.returncode != 0:
             print(f"⚠️  FFmpeg 警告：{result.stderr[-500:] if result.stderr else 'unknown'}")
-        
+
+        # 檢查檔案大小，超過 Whisper 上限則用最佳位元率重新編碼
+        if output_path.exists() and output_path.stat().st_size > self.WHISPER_MAX_SIZE:
+            size_mb = output_path.stat().st_size / (1024 * 1024)
+            print(f"   ⚠️  音檔 {size_mb:.1f}MB 超過 Whisper 25MB 上限，正在壓縮...")
+
+            temp_path = output_path.with_suffix('.tmp.mp3')
+            output_path.rename(temp_path)
+
+            # 取得音檔時長，計算能塞進 24MB 的最大位元率（留 1MB 餘量）
+            probe = subprocess.run([
+                'ffprobe', '-v', 'quiet', '-show_entries', 'format=duration',
+                '-of', 'default=noprint_wrappers=1:nokey=1', str(temp_path)
+            ], capture_output=True, text=True)
+            duration = float(probe.stdout.strip()) if probe.returncode == 0 else 1800.0
+            target_bitrate = int((24 * 1024 * 1024 * 8) / duration)
+            # 限制在合理範圍內
+            target_bitrate = max(48000, min(target_bitrate, 128000))
+            print(f"   📊 音檔時長 {duration:.0f}s，目標位元率 {target_bitrate // 1000}kbps")
+
+            result = subprocess.run([
+                'ffmpeg', '-y',
+                '-i', str(temp_path),
+                '-acodec', 'libmp3lame',
+                '-b:a', str(target_bitrate),
+                '-ac', '1',
+                str(output_path)
+            ], capture_output=True, text=True)
+
+            temp_path.unlink(missing_ok=True)
+
+            if result.returncode != 0:
+                raise RuntimeError(f"音檔壓縮失敗：{result.stderr[-500:] if result.stderr else 'unknown'}")
+
+            new_size_mb = output_path.stat().st_size / (1024 * 1024)
+            print(f"   ✅ 壓縮完成：{new_size_mb:.1f}MB")
+
         print(f"   ✅ 音軌提取完成：{output_path}")
         return output_path
     
